@@ -124,11 +124,18 @@ func TestRealtimeLifecycleEventsAreClassified(t *testing.T) {
 		{`{"type":"response.created","response":{"status":"in_progress"}}`, "response.created", "in_progress"},
 		{`{"type":"response.audio.delta","delta":"opaque"}`, "response.audio.delta", ""},
 		{`{"type":"response.done","response":{"status":"completed"}}`, "response.done", "completed"},
+		{`{"type":"response.done","response":{"status":"failed"}}`, "response.done", "failed"},
 	}
 	for _, tc := range cases {
 		ev, err := decodeEvent(testEnvelope(t, tc.raw))
-		if err != nil || ev.kind != tc.kind || ev.status != tc.status || ev.err != nil {
+		if err != nil || ev.kind != tc.kind || ev.status != tc.status {
 			t.Fatalf("event %s classified as %+v, err=%v", tc.raw, ev, err)
+		}
+		if tc.status == "failed" && (ev.err == nil || ev.failure != "response_failed") {
+			t.Fatalf("failed response not marked: %+v", ev)
+		}
+		if tc.status != "failed" && ev.err != nil {
+			t.Fatalf("successful event became error: %+v", ev)
 		}
 	}
 }
