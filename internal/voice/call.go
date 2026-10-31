@@ -415,16 +415,6 @@ func runCall(e *stationEpoch, auth credential, capture *stationCapture, settings
 			result = errors.Join(result, cleanupErr)
 		}
 	}()
-	workers.Go(func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-p.ctx.Done(): return
-			case <-ticker.C: e.debug.Print(p.statsSnapshot())
-			}
-		}
-	})
 	stopPeerCancel := context.AfterFunc(p.ctx, func() { e.revoke(context.Cause(p.ctx)) })
 	defer stopPeerCancel()
 	setupCtx, finishSetup := context.WithTimeout(ctx, setupTimeout)
