@@ -10,7 +10,7 @@ import (
 
 const (
 	debugLogPath    = "/tmp/yandex-station-chatgpt-voice.debug.log"
-	debugLogMax     = 1 << 20
+	debugLogMax     = 256 << 10
 	debugLogBackups = 2
 )
 
