@@ -97,7 +97,7 @@ func newPeer(ctx context.Context, settings webrtc.SettingEngine, servers []webrt
 	}
 	p.dc.OnOpen(sync.OnceFunc(func() { close(p.ready); p.report.Print("WebRTC DataChannel open.") }))
 	p.dc.OnMessage(func(message webrtc.DataChannelMessage) {
-		p.debug.Printf("DataChannel message received: bytes=%d text=%t.", len(message.Data), message.IsString)
+		p.debug.Printf("DataChannel message: %s.", eventDiagnosticSummary(message.Data))
 		if !message.IsString {
 			p.fail(errors.New("unexpected binary voice control message"))
 			return
