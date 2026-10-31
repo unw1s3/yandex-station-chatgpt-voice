@@ -38,7 +38,7 @@ help:
 	  'stop     Stop only the verified client process' \
 	  'restart  Stop and start the installed client' \
 	  'logs       Show the latest 60 important runtime events' \
-	  'debug-logs Show the latest 100 detailed diagnostics' \
+	  'debug-logs Show the latest 40 detailed diagnostics' \
 	  'follow-logs Follow important runtime events until Ctrl+C' \
 	  'follow-debug-logs Follow detailed diagnostics until Ctrl+C' \
 	  'shell    Open the selected Station shell' \
