@@ -338,7 +338,7 @@ func exchangeOfferObserved(ctx context.Context, client *http.Client, auth creden
 	if diag != nil { diag.signalingHTTPStatus.Store(int32(response.StatusCode)) }
 	switch response.StatusCode {
 	case http.StatusUnauthorized:
-		return "", errors.New("ChatGPT authentication rejected (HTTP 401); re-import the web auth session")
+		return "", errors.New("ChatGPT authentication rejected (HTTP 401); check the auth import and refresh the web session")
 	case http.StatusForbidden:
 		return "", errors.New("ChatGPT voice access forbidden (HTTP 403); account entitlement or access policy")
 	case http.StatusTooManyRequests:
