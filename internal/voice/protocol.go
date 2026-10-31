@@ -96,8 +96,15 @@ func eventDiagnosticSummary(data []byte) string {
 			}
 		}
 	}
-	if typ == "" {
+	if len(typ) == 0 || len(typ) > 128 {
 		typ = "unknown"
+	} else {
+		for _, r := range typ {
+			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._-", r)) {
+				typ = "unknown"
+				break
+			}
+		}
 	}
 	parts := []string{"type=" + typ}
 	appendString := func(label string, raw stdjson.RawMessage) {
