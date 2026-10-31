@@ -14,6 +14,8 @@ import (
 const maxIPCBytes = 10 << 20
 const audioStallTimeout = 3 * time.Second
 
+var errCaptureStall = errors.New("processed audio stream stalled")
+
 type aliceState uint8
 
 const (
@@ -356,6 +358,7 @@ func readCapture(ctx context.Context, conn net.Conn, capture *stationCapture) er
 		}
 		e, err := readIPC(conn)
 		if err != nil {
+			if timeout, ok := errors.AsType[net.Error](err); ok && timeout.Timeout() { return errCaptureStall }
 			return err
 		}
 		if err := decodeAudio(e, func(pcm []byte) error {
