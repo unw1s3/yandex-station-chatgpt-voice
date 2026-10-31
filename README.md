@@ -271,7 +271,8 @@ failure and produces no completion tone.
 | `make start`           | Start the installed client.                                                      |
 | `make stop`            | Stop the client. Alice remains available.                                        |
 | `make restart`         | Stop and start the client.                                                       |
-| `make logs`            | Follow the client log. Press Ctrl+C to stop following.                           |
+| `make logs`            | Follow important runtime events. Press Ctrl+C to stop following.                 |
+| `make debug-logs`      | Follow detailed WebRTC, Realtime protocol, and audio diagnostics.                 |
 | `make shell`           | Open an ADB shell on the selected Station.                                       |
 | `make install restart` | Build, install, and start an updated client. The saved token is preserved.       |
 
@@ -290,7 +291,8 @@ In that shell, remove the client, saved token, previous binary, and temporary ru
 
 ```sh
 rm -rf /data/yandex-station-chatgpt-voice \
-  /tmp/yandex-station-chatgpt-voice /tmp/yandex-station-chatgpt-voice.log
+  /tmp/yandex-station-chatgpt-voice \
+  /tmp/yandex-station-chatgpt-voice.log*
 exit
 ```
 
@@ -300,8 +302,12 @@ Root access and the original Alice services are kept.
 
 - **ADB cannot connect.** Check `STATION_IP`, confirm that root ADB is enabled, then run
   `make connect`.
-- **No ready tone.** Run `make status`, then `make logs`. Confirm that Alice is idle and that the
-  Station itself can reach ChatGPT. `status` checks local files and the process, not ChatGPT access.
+- **No ready tone.** Run `make status`, then `make logs`. If the lifecycle looks normal, run
+  `make debug-logs` to inspect WebRTC, Realtime events, and audio metrics. The runtime log contains
+  lifecycle events; the debug log is capped at 1 MiB with two rotated backups. The runtime log is
+  rotated above 256 KiB when the client starts. Neither log records conversation text or audio.
+  Confirm that Alice is idle and that the Station itself can reach ChatGPT. `status` checks local
+  files and the process, not ChatGPT access.
 - **401 or expired session.** Import a fresh token with `make auth`, then run `make restart`.
 - **403 or connection setup failure.** Check that Voice works in the browser and that the Station's
   network can reach ChatGPT. These failures do not necessarily mean the token expired.
