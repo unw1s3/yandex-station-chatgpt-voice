@@ -1,6 +1,7 @@
 package voice
 
 import (
+	stdjson "encoding/json"
 	"cmp"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
@@ -67,6 +68,61 @@ type wireEvent struct {
 	Type    string         `json:"type"`
 	Data    jsontext.Value `json:"data"`
 	Payload jsontext.Value `json:"payload"`
+}
+
+// eventDiagnosticSummary reports only protocol metadata; it never logs payload text.
+func eventDiagnosticSummary(data []byte) string {
+	var root map[string]stdjson.RawMessage
+	if stdjson.Unmarshal(data, &root) != nil {
+		return "type=unparseable"
+	}
+	var typ string
+	_ = stdjson.Unmarshal(root["type"], &typ)
+	if typ == "data_message" {
+		var inner string
+		if stdjson.Unmarshal(root["data"], &inner) != nil || stdjson.Unmarshal([]byte(inner), &root) != nil {
+			return "type=data_message"
+		}
+		_ = stdjson.Unmarshal(root["type"], &typ)
+	}
+	if nested, ok := root["payload"]; ok {
+		var candidate map[string]stdjson.RawMessage
+		if stdjson.Unmarshal(nested, &candidate) == nil && len(candidate) > 0 {
+			var nestedType string
+			_ = stdjson.Unmarshal(candidate["type"], &nestedType)
+			if nestedType != "" {
+				root, typ = candidate, nestedType
+			}
+		}
+	}
+	if typ == "" {
+		typ = "unknown"
+	}
+	parts := []string{"type=" + typ}
+	appendString := func(label string, raw stdjson.RawMessage) {
+		var value string
+		if len(raw) == 0 || stdjson.Unmarshal(raw, &value) != nil || len(value) > 64 {
+			return
+		}
+		for _, r := range value {
+			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._-", r)) {
+				return
+			}
+		}
+		parts = append(parts, label+"="+value)
+	}
+	appendString("status", root["status"])
+	appendString("code", root["code"])
+	var response map[string]stdjson.RawMessage
+	if stdjson.Unmarshal(root["response"], &response) == nil {
+		appendString("response_status", response["status"])
+	}
+	var failure map[string]stdjson.RawMessage
+	if stdjson.Unmarshal(root["error"], &failure) == nil {
+		appendString("error_type", failure["type"])
+		appendString("error_code", failure["code"])
+	}
+	return strings.Join(parts, " ")
 }
 
 func decodeEvent(data []byte) (event, error) {
