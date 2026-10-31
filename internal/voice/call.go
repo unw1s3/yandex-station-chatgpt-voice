@@ -283,6 +283,10 @@ func signalingClient() *http.Client {
 }
 
 func exchangeOffer(ctx context.Context, client *http.Client, auth credential, offer string, session []byte) (string, error) {
+	return exchangeOfferObserved(ctx, client, auth, offer, session, nil)
+}
+
+func exchangeOfferObserved(ctx context.Context, client *http.Client, auth credential, offer string, session []byte, diag *runtimeDiagnostics) (string, error) {
 	if !validCredential(auth) {
 		return "", errors.New("invalid web credential")
 	}
@@ -324,6 +328,7 @@ func exchangeOffer(ctx context.Context, client *http.Client, auth credential, of
 		return "", errors.New("voice signaling HTTPS request failed; check network, TLS, and service availability")
 	}
 	defer response.Body.Close()
+	if diag != nil { diag.signalingHTTPStatus.Store(int32(response.StatusCode)) }
 	switch response.StatusCode {
 	case http.StatusUnauthorized:
 		return "", errors.New("ChatGPT session expired or rejected (401); run yandex-station-chatgpt-voice auth import with a fresh own web access token")
@@ -422,7 +427,8 @@ func runCall(e *stationEpoch, auth credential, capture *stationCapture, settings
 	client := signalingClient()
 	defer client.CloseIdleConnections()
 	signalingStarted := time.Now()
-	answer, err := exchangeOffer(setupCtx, client, auth, offer, session)
+	e.diag.signalingAttempts.Add(1)
+	answer, err := exchangeOfferObserved(setupCtx, client, auth, offer, session, e.diag)
 	signalingDuration := time.Since(signalingStarted)
 	e.diag.signalingDurationMs.Store(signalingDuration.Milliseconds())
 	e.diag.signalingSuccess.Store(err == nil)
