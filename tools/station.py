@@ -19,6 +19,7 @@ import warnings
 
 APP = "/data/yandex-station-chatgpt-voice"
 LOG = "/tmp/yandex-station-chatgpt-voice.log"
+DEBUG_LOG = "/tmp/yandex-station-chatgpt-voice.debug.log"
 LIBS = "/system/vendor/quasar/libs:/system/vendor/lib:/system/lib:/usr/lib:/lib"
 BINARY = Path(__file__).resolve().parent.parent / "build/yandex-station-chatgpt-voice"
 LIMIT = 1 << 20
@@ -100,9 +101,17 @@ start_client() {
         return 0
     fi
     [ -f "$app/client" ] && [ ! -L "$app/client" ] && [ -x "$app/client" ] || die 'Install the client first.'
-    [ ! -L "$log" ] || die 'Log must not be a symlink.'
-    if [ -e "$log" ]; then
-        [ -f "$log" ] || die 'Log must be a regular file.'
+    [ ! -L "$log" ] && [ ! -L "$log.1" ] && [ ! -L "$log.2" ] || die 'Log paths must not be symlinks.'
+    for path in "$log" "$log.1" "$log.2"; do
+        if [ -e "$path" ]; then [ -f "$path" ] || die 'Log paths must be regular files.'; fi
+    done
+    if [ -f "$log" ]; then
+        size=$(wc -c < "$log") || die 'Cannot inspect runtime log size.'
+        if [ "$size" -gt 262144 ]; then
+            rm -f "$log.2"
+            [ ! -f "$log.1" ] || mv "$log.1" "$log.2"
+            mv "$log" "$log.1"
+        fi
     fi
     if [ -e "$log" ]; then chmod 600 "$log"; fi
     : >> "$log"
@@ -554,6 +563,7 @@ def main():
             "stop",
             "restart",
             "logs",
+            "debug-logs",
             "shell",
             "auth",
             "diagnose",
@@ -583,11 +593,13 @@ def main():
     if args.action == "diagnose":
         diagnose(args)
         return
-    if args.action in ("logs", "shell"):
+    if args.action in ("logs", "debug-logs", "shell"):
         adb_shell(args, COMMON + "true\n")
         command = [args.adb, "-s", args.serial, "shell"]
         if args.action == "logs":
             command.append(f"tail -n 100 -f {shlex.quote(LOG)}")
+        elif args.action == "debug-logs":
+            command.append(f"tail -n 100 -f {shlex.quote(DEBUG_LOG)}")
         raise SystemExit(subprocess.call(command))
     data = arm_binary(BINARY) if args.action == "install" else None
     session = session_input(args.session_json) if args.action == "auth" else None
