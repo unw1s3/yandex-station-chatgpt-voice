@@ -27,6 +27,7 @@ import (
 
 const captureSamples = 320
 const captureGain = 32
+const playbackGain = 2
 const samplesPerFrame = 960
 const frameDuration = 20 * time.Millisecond
 const reorderDelay = 3 * frameDuration
@@ -144,7 +145,7 @@ func (a *audio) callback(output, _ []byte, frames uint32) {
 		if a.currentAt >= a.current.used {
 			continue
 		}
-		left, right := a.current.pcm[a.currentAt*2], a.current.pcm[a.currentAt*2+1]
+		left, right := amplifyPlaybackSample(a.current.pcm[a.currentAt*2]), amplifyPlaybackSample(a.current.pcm[a.currentAt*2+1])
 		binary.LittleEndian.PutUint16(output[i*4:], uint16(left))
 		binary.LittleEndian.PutUint16(output[i*4+2:], uint16(right))
 		if left != 0 || right != 0 {
@@ -161,6 +162,17 @@ func (a *audio) callback(output, _ []byte, frames uint32) {
 		clear(output)
 		return
 	}
+}
+
+// amplifyPlaybackSample raises remote ChatGPT audio without allowing int16 wraparound.
+func amplifyPlaybackSample(sample int16) int16 {
+	value := int32(sample) * playbackGain
+	if value > math.MaxInt16 {
+		value = math.MaxInt16
+	} else if value < math.MinInt16 {
+		value = math.MinInt16
+	}
+	return int16(value)
 }
 
 func amplifyCapturePCM(pcm []int16, gain int) {
