@@ -44,14 +44,17 @@ func TestWebsiteProtocol(t *testing.T) {
 }
 
 func TestDisplayEventsIgnored(t *testing.T) {
-	for _, raw := range []string{
-		`{"type":"chat_message_delta","delta":{"v":{"message":{"content":{"parts":[{"text":"private words"}]}}}}}`,
-		`{"type":"state_update","payload":{"new_state":"speaking"}}`,
-		`{"type":"state_update","payload":{"new_state":{"future":true}}}`,
+	for _, tc := range []struct {
+		raw  string
+		kind string
+	}{
+		{`{"type":"chat_message_delta","delta":{"v":{"message":{"content":{"parts":[{"text":"private words"}]}}}}}`, "unrecognized:chat_message_delta"},
+		{`{"type":"state_update","payload":{"new_state":"speaking"}}`, "unrecognized:state_update"},
+		{`{"type":"state_update","payload":{"new_state":{"future":true}}}`, "unrecognized:state_update"},
 	} {
-		ev, err := decodeEvent(testEnvelope(t, raw))
-		if err != nil || ev != (event{}) {
-			t.Fatalf("display event affected runtime: %+v %v", ev, err)
+		ev, err := decodeEvent(testEnvelope(t, tc.raw))
+		if err != nil || ev.kind != tc.kind || ev.ended || ev.err != nil || ev.status != "" || ev.failure != "" {
+			t.Fatalf("display event was not safely classified: %+v %v", ev, err)
 		}
 	}
 	if _, err := decodeEvent(make([]byte, maxMessageBytes+1)); err == nil {
@@ -65,8 +68,8 @@ func TestUnknownEventDataShapes(t *testing.T) {
 			raw := `{"type":"future_event","data":` + data + `}`
 			for _, input := range [][]byte{[]byte(raw), testEnvelope(t, raw), testEnvelope(t, `{"payload":`+raw+`}`)} {
 				ev, err := decodeEvent(input)
-				if err != nil || ev != (event{}) {
-					t.Fatalf("unknown event returned %+v, %v", ev, err)
+				if err != nil || ev.kind != "unrecognized:future_event" || ev.ended || ev.err != nil || ev.status != "" || ev.failure != "" {
+					t.Fatalf("unknown event was not safely classified: %+v, %v", ev, err)
 				}
 			}
 		})
@@ -162,8 +165,8 @@ func TestPositiveRemainingQuotaIsNotTerminal(t *testing.T) {
 		`{"type":"usage_update","limits":{"audio":{"remaining_seconds":5}}}`,
 	} {
 		ev, err := decodeEvent(testEnvelope(t, raw))
-		if err != nil || ev != (event{}) {
-			t.Errorf("positive remaining quota ended the call: %s %+v %v", raw, ev, err)
+		if err != nil || ev.kind != "unrecognized:usage_update" || ev.ended || ev.err != nil || ev.status != "" || ev.failure != "" {
+			t.Errorf("positive remaining quota was not safely classified: %s %+v %v", raw, ev, err)
 		}
 	}
 }
