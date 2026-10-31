@@ -31,12 +31,13 @@ type stationEpoch struct {
 	cancel context.CancelCauseFunc
 	output *audio
 	report *log.Logger
+	debug *log.Logger
 	diag *runtimeDiagnostics
 }
 
 func newStationEpoch(parent context.Context, number uint64) *stationEpoch {
 	ctx, cancel := context.WithCancelCause(parent)
-	e := &stationEpoch{number: number, ctx: ctx, cancel: cancel, report: log.New(io.Discard, "", 0), diag: &runtimeDiagnostics{}}
+	e := &stationEpoch{number: number, ctx: ctx, cancel: cancel, report: log.New(io.Discard, "", 0), debug: log.New(io.Discard, "", 0), diag: &runtimeDiagnostics{}}
 	e.output = newAudio(e)
 	return e
 }
@@ -239,16 +240,22 @@ func runStation(parent context.Context, credentialFile string, settings sessionS
 		}
 		return errors.New("cannot connect to native Alice state")
 	}
+	debugFile, err := openRotatingLog(debugLogPath, debugLogMax)
+	if err != nil { return err }
+	defer debugFile.Close()
+	debug := log.New(debugFile, "", log.LstdFlags|log.Lmicroseconds)
 	return serveStation(parent, conn, auth, out, func(e *stationEpoch, gate *stationGate, auth credential) error {
 		return runStationEpoch(e, gate, auth, settings)
-	}, playEndCue)
+	}, playEndCue, debug)
 }
 
-func serveStation(parent context.Context, conn net.Conn, auth credential, out io.Writer, attempt func(*stationEpoch, *stationGate, credential) error, endCue func(context.Context) error) error {
+func serveStation(parent context.Context, conn net.Conn, auth credential, out io.Writer, attempt func(*stationEpoch, *stationGate, credential) error, endCue func(context.Context) error, debugLoggers ...*log.Logger) error {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	gate := newStationGate()
 	report := log.New(out, "", 0)
+	debug := log.New(io.Discard, "", 0)
+	if len(debugLoggers) > 0 && debugLoggers[0] != nil { debug = debugLoggers[0] }
 	defer report.Print("Station voice stopped.")
 	stateDone := make(chan error, 1)
 	var stateWorker sync.WaitGroup
@@ -267,6 +274,7 @@ func serveStation(parent context.Context, conn net.Conn, auth credential, out io
 		}
 		if epoch := gate.begin(ctx); epoch != nil {
 			epoch.report = report
+			epoch.debug = debug
 			err := attempt(epoch, gate, auth)
 			var cue *stationEpoch
 			if err == nil {
@@ -344,7 +352,7 @@ func runStationEpoch(e *stationEpoch, gate *stationGate, auth credential, settin
 		for {
 			select {
 			case <-e.ctx.Done(): return
-			case <-ticker.C: e.report.Print(e.diag.snapshot())
+			case <-ticker.C: e.debug.Print(e.diag.snapshot())
 			}
 		}
 	})
