@@ -3,6 +3,7 @@ package voice
 import (
 	stdjson "encoding/json"
 	"cmp"
+	"sort"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -121,6 +122,31 @@ func eventDiagnosticSummary(data []byte) string {
 	if stdjson.Unmarshal(root["error"], &failure) == nil {
 		appendString("error_type", failure["type"])
 		appendString("error_code", failure["code"])
+	}
+	var fields map[string]stdjson.RawMessage
+	if stdjson.Unmarshal(root["payload"], &fields) == nil && len(fields) > 0 {
+		keys := make([]string, 0, len(fields))
+		for key := range fields {
+			if len(key) <= 32 {
+				valid := true
+				for _, r := range key {
+					if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '.') {
+						valid = false
+						break
+					}
+				}
+				if valid {
+					keys = append(keys, key)
+				}
+			}
+		}
+		sort.Strings(keys)
+		if len(keys) > 8 {
+			keys = keys[:8]
+		}
+		if len(keys) > 0 {
+			parts = append(parts, "payload_fields="+strings.Join(keys, ","))
+		}
 	}
 	return strings.Join(parts, " ")
 }
