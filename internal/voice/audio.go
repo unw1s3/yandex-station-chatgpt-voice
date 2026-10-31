@@ -120,6 +120,7 @@ func (a *audio) callback(output, _ []byte, frames uint32) {
 	if !a.epoch.allowed() {
 		return
 	}
+	var writtenFrames uint64
 	for i := 0; i < min(int(frames), len(output)/4); i++ {
 		if !a.epoch.allowed() {
 			clear(output)
@@ -144,7 +145,9 @@ func (a *audio) callback(output, _ []byte, frames uint32) {
 		binary.LittleEndian.PutUint16(output[i*4:], uint16(left))
 		binary.LittleEndian.PutUint16(output[i*4+2:], uint16(right))
 		a.currentAt++
+		writtenFrames++
 	}
+	if writtenFrames > 0 { a.epoch.diag.playbackOutputFrames.Add(writtenFrames) }
 	if !a.epoch.allowed() {
 		clear(output)
 		return
@@ -194,6 +197,8 @@ func (a *audio) send(ctx context.Context, track *webrtc.TrackLocalStaticSample, 
 			}
 			return errors.New("audio transport send failed")
 		}
+		a.epoch.diag.outboundOpusPackets.Add(1)
+		a.epoch.diag.outboundOpusBytes.Add(uint64(n))
 	}
 }
 
@@ -208,6 +213,7 @@ func (a *audio) queueDecoded(pcm []int16) {
 		pcm = pcm[n:]
 		select {
 		case a.playback <- block:
+			a.epoch.diag.playbackQueuedBlocks.Add(1)
 		default:
 			a.playbackDrops.Add(1)
 		}
@@ -312,6 +318,7 @@ func (a *audio) receive(ctx context.Context, track *webrtc.TrackRemote) error {
 				return errors.New("invalid remote Opus packet")
 			}
 			nextTimestamp = sample.PacketTimestamp + uint32(n)
+			a.epoch.diag.decodedSamples.Add(uint64(n))
 			havePacket = true
 			a.queueDecoded(pcm[:n*2])
 		}
@@ -355,6 +362,8 @@ func (a *audio) receive(ctx context.Context, track *webrtc.TrackRemote) error {
 		if len(packet.Payload) == 0 && !packet.Padding {
 			return errors.New("invalid remote Opus packet")
 		}
+		a.epoch.diag.inboundRTPPackets.Add(1)
+		a.epoch.diag.inboundRTPBytes.Add(uint64(len(packet.Payload)))
 		if _, pending := arrivals[packet.SequenceNumber]; !pending {
 			arrivals[packet.SequenceNumber] = time.Now()
 		}
