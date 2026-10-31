@@ -167,14 +167,31 @@ func amplifyCapturePCM(pcm []int16, gain int) {
 	if gain <= 1 {
 		return
 	}
-	for i, sample := range pcm {
-		value := int32(sample) * int32(gain)
-		if value > 32767 {
-			value = 32767
-		} else if value < -32768 {
-			value = -32768
+	var peak int32
+	for _, sample := range pcm {
+		value := int32(sample)
+		if value < 0 {
+			value = -value
 		}
-		pcm[i] = int16(value)
+		if value > peak {
+			peak = value
+		}
+	}
+	if peak == 0 {
+		return
+	}
+	safeGain := 32767 / int(peak)
+	if safeGain < 1 {
+		safeGain = 1
+	}
+	if gain > safeGain {
+		gain = safeGain
+	}
+	if gain <= 1 {
+		return
+	}
+	for i, sample := range pcm {
+		pcm[i] = int16(int32(sample) * int32(gain))
 	}
 }
 
