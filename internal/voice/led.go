@@ -30,11 +30,12 @@ type stationLED struct {
 	state      stationLEDColor
 	hasState   bool
 	brightness int
+	writeBrightness func(string, int) error
 	original   map[string]int
 }
 
 func newStationLED(root string) *stationLED {
-	return &stationLED{root: root}
+	return &stationLED{root: root, writeBrightness: writeStationBrightness}
 }
 
 func (l *stationLED) activate() error {
@@ -153,7 +154,7 @@ func (l *stationLED) applyLocked(color stationLEDColor) error {
 			value int
 		}{{"red", red}, {"green", green}, {"blue", blue}} {
 			name := fmt.Sprintf("mini2:%s:ring%d", channel.name, zone)
-			if err := writeStationBrightness(filepath.Join(l.root, name, "brightness"), channel.value); err != nil {
+			if err := l.writeBrightness(filepath.Join(l.root, name, "brightness"), channel.value); err != nil {
 				return fmt.Errorf("write Station LED %s: %w", name, err)
 			}
 		}
@@ -175,7 +176,7 @@ func (l *stationLED) restoreLocked() error {
 	}
 	var result error
 	for name, value := range l.original {
-		if err := writeStationBrightness(filepath.Join(l.root, name, "brightness"), value); err != nil {
+		if err := l.writeBrightness(filepath.Join(l.root, name, "brightness"), value); err != nil {
 			result = fmt.Errorf("restore Station LED %s: %w", name, err)
 		}
 	}
