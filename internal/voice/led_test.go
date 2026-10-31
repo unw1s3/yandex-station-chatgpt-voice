@@ -9,7 +9,7 @@ import (
 )
 
 func newTestStationLED(root string) *stationLED {
-	led := newStationLED(root)
+	led := newTestStationLED(root)
 	// Regular files do not have sysfs brightness semantics: emulate sysfs by
 	// replacing the whole value on each write.
 	led.writeBrightness = func(path string, value int) error {
@@ -63,7 +63,7 @@ func writeStationClockValue(t *testing.T, root, name, value string) {
 
 func TestStationLEDColorsAndRestore(t *testing.T) {
 	root := makeStationLEDFixture(t)
-	led := newStationLED(root)
+	led := newTestStationLED(root)
 	if err := led.activate(); err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestStationLEDColorsAndRestore(t *testing.T) {
 
 func TestStationLEDFollowsClockBrightness(t *testing.T) {
 	root := makeStationLEDFixture(t)
-	led := newStationLED(root)
+	led := newTestStationLED(root)
 	if err := led.activate(); err != nil {
 		t.Fatal(err)
 	}
