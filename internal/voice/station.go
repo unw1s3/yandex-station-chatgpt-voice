@@ -234,7 +234,9 @@ func runStation(parent context.Context, credentialFile string, settings sessionS
 		return err
 	}
 	debugFile, err := openRotatingLog(debugLogPath, debugLogMax)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer debugFile.Close()
 	debug := log.New(debugFile, "", log.LstdFlags|log.Lmicroseconds)
 	conn, err := dialStation(parent, "127.0.0.1:9875")
@@ -255,7 +257,9 @@ func serveStation(parent context.Context, conn net.Conn, auth credential, out io
 	gate := newStationGate()
 	report := log.New(out, "", 0)
 	debug := log.New(io.Discard, "", 0)
-	if len(debugLoggers) > 0 && debugLoggers[0] != nil { debug = debugLoggers[0] }
+	if len(debugLoggers) > 0 && debugLoggers[0] != nil {
+		debug = debugLoggers[0]
+	}
 	defer report.Print("Station voice stopped.")
 	stateDone := make(chan error, 1)
 	var stateWorker sync.WaitGroup
