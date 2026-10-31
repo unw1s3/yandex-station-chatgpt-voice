@@ -354,6 +354,29 @@ class AuthInputTest(unittest.TestCase):
             )
             hidden.assert_called_once()
 
+    def test_log_actions_are_bounded_unless_follow_requested(self):
+        expected = {
+            "logs": ["tail", "-n", "60", station.LOG],
+            "debug-logs": ["tail", "-n", "100", station.DEBUG_LOG],
+            "follow-logs": ["tail", "-n", "60", station.LOG, "-f"],
+            "follow-debug-logs": ["tail", "-n", "100", station.DEBUG_LOG, "-f"],
+        }
+        for action, tail_args in expected.items():
+            with (
+                self.subTest(action=action),
+                mock.patch.object(
+                    sys, "argv", ["station.py", "--ip", "192.0.2.1", action]
+                ),
+                mock.patch.object(station, "adb_shell"),
+                mock.patch.object(station.subprocess, "call", return_value=0) as call,
+            ):
+                with self.assertRaises(SystemExit) as result:
+                    station.main()
+                self.assertEqual(result.exception.code, 0)
+                call.assert_called_once_with(
+                    ["adb", "-s", "192.0.2.1:5555", "shell", *tail_args]
+                )
+
     def test_other_actions_ignore_environment_and_reject_explicit_path(self):
         for action in (
             "connect",
