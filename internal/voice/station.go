@@ -33,6 +33,7 @@ type stationEpoch struct {
 	report *log.Logger
 	debug *log.Logger
 	diag *runtimeDiagnostics
+	led  *stationLED
 }
 
 func newStationEpoch(parent context.Context, number uint64) *stationEpoch {
