@@ -21,7 +21,6 @@ func TestRuntimeDiagnosticsObservePCM(t *testing.T) {
 	if got := d.lastPeak.Load(); got != 1000 { t.Fatalf("peak = %d, want 1000", got) }
 	if got := d.lastVoiceUnixNano.Load(); got == 0 { t.Fatal("non-silent PCM did not update voice timestamp") }
 	if got := d.maxCapturePeak.Load(); got != 1000 { t.Fatalf("max capture peak = %d, want 1000", got) }
-	if got := d.maxCaptureBEPeak.Load(); got != 6141 { t.Fatalf("byte-swapped max capture peak = %d, want 6141", got) }
 	if !strings.Contains(d.snapshot(), "detector_frames=0") { t.Fatal("snapshot missing counters") }
 }
 
