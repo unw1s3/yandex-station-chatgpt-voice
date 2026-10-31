@@ -9,7 +9,7 @@ import (
 )
 
 func newTestStationLED(root string) *stationLED {
-	led := newTestStationLED(root)
+	led := newStationLED(root)
 	// Regular files do not have sysfs brightness semantics: emulate sysfs by
 	// replacing the whole value on each write.
 	led.writeBrightness = func(path string, value int) error {
