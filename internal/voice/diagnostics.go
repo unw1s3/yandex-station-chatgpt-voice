@@ -23,6 +23,15 @@ type runtimeDiagnostics struct {
 	captureStalls      atomic.Uint64
 	captureReadErrors  atomic.Uint64
 	captureQueueDrops  atomic.Uint64
+	outboundOpusPackets atomic.Uint64
+	outboundOpusBytes atomic.Uint64
+	inboundRTPPackets atomic.Uint64
+	inboundRTPBytes atomic.Uint64
+	decodedSamples atomic.Uint64
+	playbackQueuedBlocks atomic.Uint64
+	playbackOutputFrames atomic.Uint64
+	signalingDurationMs atomic.Int64
+	signalingSuccess atomic.Bool
 	firstPCMUnixNano   atomic.Int64
 	lastPCMUnixNano    atomic.Int64
 	lastVoiceUnixNano  atomic.Int64
@@ -76,12 +85,16 @@ func (d *runtimeDiagnostics) snapshot() string {
 	if silenceSince == 0 { silenceSince = d.firstPCMUnixNano.Load() }
 	if silenceSince != 0 { silence = now.Sub(time.Unix(0, silenceSince)).Round(time.Millisecond).String() }
 	return fmt.Sprintf(
-		"Runtime audio: chunks=%d bytes=%d samples=%d detector_frames=%d streaming_frames=%d last_pcm_age=%s rms=%.0f peak=%d silence=%s spotter_init_errors=%d spotter_feed_errors=%d wake_detections=%d capture_stalls=%d capture_read_errors=%d queue_overflows=%d",
+		"Runtime audio: chunks=%d bytes=%d samples=%d detector_frames=%d streaming_frames=%d last_pcm_age=%s rms=%.0f peak=%d silence=%s spotter_init_errors=%d spotter_feed_errors=%d wake_detections=%d capture_stalls=%d capture_read_errors=%d queue_overflows=%d opus_out_packets=%d opus_out_bytes=%d rtp_in_packets=%d rtp_in_bytes=%d decoded_samples=%d playback_blocks=%d playback_output_frames=%d signaling_ms=%d signaling_ok=%t",
 		d.pcmChunks.Load(), d.pcmBytes.Load(), d.pcmSamples.Load(),
 		d.detectorFrames.Load(), d.streamingFrames.Load(), pcmAge, rms,
 		d.lastPeak.Load(), silence, d.spotterInitErrors.Load(),
 		d.spotterFeedErrors.Load(), d.wakeDetections.Load(),
 		d.captureStalls.Load(), d.captureReadErrors.Load(),
-		d.captureQueueDrops.Load(),
+		d.captureQueueDrops.Load(), d.outboundOpusPackets.Load(),
+		d.outboundOpusBytes.Load(), d.inboundRTPPackets.Load(),
+		d.inboundRTPBytes.Load(), d.decodedSamples.Load(),
+		d.playbackQueuedBlocks.Load(), d.playbackOutputFrames.Load(),
+		d.signalingDurationMs.Load(), d.signalingSuccess.Load(),
 	)
 }
