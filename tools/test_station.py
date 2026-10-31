@@ -357,9 +357,9 @@ class AuthInputTest(unittest.TestCase):
     def test_log_actions_are_bounded_unless_follow_requested(self):
         expected = {
             "logs": ["tail", "-n", "60", station.LOG],
-            "debug-logs": ["tail", "-n", "100", station.DEBUG_LOG],
+            "debug-logs": ["tail", "-n", "40", station.DEBUG_LOG],
             "follow-logs": ["tail", "-n", "60", station.LOG, "-f"],
-            "follow-debug-logs": ["tail", "-n", "100", station.DEBUG_LOG, "-f"],
+            "follow-debug-logs": ["tail", "-n", "40", station.DEBUG_LOG, "-f"],
         }
         for action, tail_args in expected.items():
             with (
