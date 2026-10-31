@@ -192,6 +192,7 @@ func (a *audio) send(ctx context.Context, track *webrtc.TrackLocalStaticSample, 
 		}
 		expected = frame.sequence + 1
 		haveFrame = true
+		a.epoch.diag.observeOutboundPCM(frame.pcm[:])
 		n, err := encoder.Encode(frame.pcm[:], packet[:])
 		if err != nil {
 			return fmt.Errorf("%w: Opus capture encoding failed", errStationAudio)
