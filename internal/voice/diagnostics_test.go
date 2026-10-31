@@ -57,7 +57,8 @@ func TestInboundPCMAndPlaybackDiagnostics(t *testing.T) {
 	}
 	output := make([]byte, 16)
 	binary.LittleEndian.PutUint16(output[0:], uint16(int16(2000)))
-	binary.LittleEndian.PutUint16(output[2:], uint16(int16(-2000)))
+	negativeSample := int16(-2000)
+	binary.LittleEndian.PutUint16(output[2:], uint16(negativeSample))
 	d.observePlaybackOutput(output, 1)
 	if got := d.lastPlaybackPeak.Load(); got != 2000 {
 		t.Fatalf("playback peak = %d, want 2000", got)
