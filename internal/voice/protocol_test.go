@@ -117,6 +117,36 @@ func TestRemoteEnd(t *testing.T) {
 	}
 }
 
+func TestRealtimeLifecycleEventsAreClassified(t *testing.T) {
+	cases := []struct { raw, kind, status string }{
+		{`{"type":"input_audio_buffer.speech_started"}`, "input_audio_buffer.speech_started", ""},
+		{`{"type":"conversation.item.input_audio_transcription.completed"}`, "conversation.item.input_audio_transcription.completed", ""},
+		{`{"type":"response.created","response":{"status":"in_progress"}}`, "response.created", "in_progress"},
+		{`{"type":"response.audio.delta","delta":"opaque"}`, "response.audio.delta", ""},
+		{`{"type":"response.done","response":{"status":"completed"}}`, "response.done", "completed"},
+	}
+	for _, tc := range cases {
+		ev, err := decodeEvent(testEnvelope(t, tc.raw))
+		if err != nil || ev.kind != tc.kind || ev.status != tc.status || ev.err != nil {
+			t.Fatalf("event %s classified as %+v, err=%v", tc.raw, ev, err)
+		}
+	}
+}
+
+func TestRealtimeServerErrorsAreSanitizedAndClassified(t *testing.T) {
+	for _, tc := range []struct { raw, category string }{
+		{`{"type":"error","error":{"code":"rate_limit_exceeded","message":"secret"}}`, "rate_limit"},
+		{`{"type":"error","error":{"type":"quota_error","message":"secret"}}`, "quota"},
+		{`{"type":"error","error":{"code":"invalid_authentication","message":"secret"}}`, "authentication"},
+		{`{"type":"error","message":"secret"}`, "server_error"},
+	} {
+		ev, err := decodeEvent(testEnvelope(t, tc.raw))
+		if err != nil || ev.failure != tc.category || ev.err == nil || strings.Contains(ev.err.Error(), "secret") {
+			t.Fatalf("unsafe or incorrect error classification: %+v %v", ev, err)
+		}
+	}
+}
+
 func TestPositiveRemainingQuotaIsNotTerminal(t *testing.T) {
 	for _, raw := range []string{
 		`{"type":"usage_update","audio_s":1}`,
