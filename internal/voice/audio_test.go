@@ -17,6 +17,18 @@ import (
 	"github.com/pion/webrtc/v4/pkg/media"
 )
 
+
+func TestAmplifyCapturePCM(t *testing.T) {
+	pcm := []int16{100, -100, 1000, -1000, 2000, -2000, 32767, -32768}
+	amplifyCapturePCM(pcm, 32)
+	want := []int16{3200, -3200, 32000, -32000, 32767, -32768, 32767, -32768}
+	for i := range want {
+		if pcm[i] != want[i] {
+			t.Fatalf("amplified sample %d = %d, want %d", i, pcm[i], want[i])
+		}
+	}
+}
+
 func toneFrame(epoch uint64, frame int, hz float64) captureFrame {
 	f := captureFrame{epoch: epoch, sequence: uint64(frame)}
 	for i := range f.pcm {
