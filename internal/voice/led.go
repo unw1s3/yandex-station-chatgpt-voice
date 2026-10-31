@@ -9,7 +9,10 @@ import (
 	"sync"
 )
 
-const stationLEDBrightness = 48
+const (
+	stationClockMaxBrightness = 170
+	stationLEDMaxBrightness   = 255
+)
 
 type stationLEDColor uint8
 
@@ -21,12 +24,13 @@ const (
 )
 
 type stationLED struct {
-	mu      sync.Mutex
-	root    string
-	active  bool
-	state   stationLEDColor
-	hasState bool
-	original map[string]int
+	mu         sync.Mutex
+	root       string
+	active     bool
+	state      stationLEDColor
+	hasState   bool
+	brightness int
+	original   map[string]int
 }
 
 func newStationLED(root string) *stationLED {
@@ -38,6 +42,11 @@ func (l *stationLED) activate() error {
 	defer l.mu.Unlock()
 	if l.active {
 		return nil
+	}
+
+	brightness, err := l.readClockBrightnessLocked()
+	if err != nil {
+		return err
 	}
 	original := make(map[string]int, 18)
 	for _, color := range []string{"red", "green", "blue"} {
@@ -55,6 +64,7 @@ func (l *stationLED) activate() error {
 		}
 	}
 	l.original = original
+	l.brightness = brightness
 	l.active = true
 	if err := l.applyLocked(stationLEDConnecting); err != nil {
 		_ = l.restoreLocked()
@@ -72,17 +82,68 @@ func (l *stationLED) set(color stationLEDColor) error {
 	return l.applyLocked(color)
 }
 
+// refreshClockBrightness rereads the two colon LEDs and updates the logo
+// without changing its current status color.
+func (l *stationLED) refreshClockBrightness() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.active {
+		return nil
+	}
+	brightness, err := l.readClockBrightnessLocked()
+	if err != nil {
+		return err
+	}
+	if brightness == l.brightness {
+		return nil
+	}
+	l.brightness = brightness
+	if l.hasState {
+		return l.applyLocked(l.state)
+	}
+	return nil
+}
+
+func (l *stationLED) readClockBrightnessLocked() (int, error) {
+	values := make([]int, 0, 2)
+	for _, name := range []string{"mini2:white:clockPLUS1", "mini2:white:clockPLUS2"} {
+		data, err := os.ReadFile(filepath.Join(l.root, name, "brightness"))
+		if err != nil {
+			return 0, fmt.Errorf("read clock brightness %s: %w", name, err)
+		}
+		value, err := strconv.Atoi(strings.TrimSpace(string(data)))
+		if err != nil {
+			return 0, fmt.Errorf("parse clock brightness %s: %w", name, err)
+		}
+		if value < 0 {
+			value = 0
+		}
+		if value > stationClockMaxBrightness {
+			value = stationClockMaxBrightness
+		}
+		values = append(values, value)
+	}
+
+	// The two colon dots normally track one another. Use the brighter value
+	// if a display update catches them between writes.
+	clockBrightness := values[0]
+	if values[1] > clockBrightness {
+		clockBrightness = values[1]
+	}
+	return (clockBrightness*stationLEDMaxBrightness + stationClockMaxBrightness/2) / stationClockMaxBrightness, nil
+}
+
 func (l *stationLED) applyLocked(color stationLEDColor) error {
 	var red, green, blue int
 	switch color {
 	case stationLEDConnecting:
-		red, green = stationLEDBrightness, stationLEDBrightness
+		red, green = l.brightness, l.brightness
 	case stationLEDWaiting:
-		red, blue = 0, stationLEDBrightness
+		blue = l.brightness
 	case stationLEDSpeaking:
-		green = stationLEDBrightness
+		green = l.brightness
 	case stationLEDError:
-		red = stationLEDBrightness
+		red = l.brightness
 	default:
 		return fmt.Errorf("unknown Station LED color %d", color)
 	}
