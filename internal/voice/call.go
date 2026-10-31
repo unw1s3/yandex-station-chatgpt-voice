@@ -45,6 +45,7 @@ type peer struct {
 	failureMu sync.Mutex
 	failure   error
 	diag      *runtimeDiagnostics
+	led       *stationLED
 }
 
 func newPeer(ctx context.Context, settings webrtc.SettingEngine, servers []webrtc.ICEServer, report *log.Logger, diagnostics ...*runtimeDiagnostics) (*peer, error) {
@@ -234,12 +235,29 @@ func (p *peer) handleMessage(data []byte) {
 		return
 	}
 	if p.diag != nil { p.diag.observeRealtimeEvent(ev) }
+	if p.led != nil {
+		switch ev.kind {
+		case "response.created", "response.done":
+			if err := p.led.set(stationLEDWaiting); err != nil {
+				p.debug.Print("Station LED update failed: ", err)
+			}
+		case "response.audio.delta":
+			if err := p.led.set(stationLEDSpeaking); err != nil {
+				p.debug.Print("Station LED update failed: ", err)
+			}
+		}
+	}
 	if ev.kind != "" {
 		if ev.status != "" { p.debug.Printf("ChatGPT event: %s status=%s.", ev.kind, ev.status)
 		} else if ev.failure != "" { p.debug.Printf("ChatGPT event: %s category=%s.", ev.kind, ev.failure)
 		} else { p.debug.Printf("ChatGPT event: %s.", ev.kind) }
 	}
 	if ev.err != nil {
+		if p.led != nil {
+			if err := p.led.set(stationLEDError); err != nil {
+				p.debug.Print("Station LED update failed: ", err)
+			}
+		}
 		p.report.Printf("ChatGPT response error: %v.", ev.err)
 		p.fail(ev.err)
 	} else if ev.ended {
@@ -400,6 +418,7 @@ func runCall(e *stationEpoch, auth credential, capture *stationCapture, settings
 		return err
 	}
 	p.debug = e.debug
+	p.led = e.led
 	shutdown := sync.OnceValue(func() error {
 		e.revoke(context.Canceled)
 		return errors.Join(e.output.close(), p.close())
@@ -488,6 +507,9 @@ func runCall(e *stationEpoch, auth credential, capture *stationCapture, settings
 	finishSetup()
 	e.diag.setupDurationMs.Store(time.Since(setupStarted).Milliseconds())
 	e.report.Printf("Voice media ready; setup=%s.", time.Since(setupStarted).Round(time.Millisecond))
+	if err := e.led.set(stationLEDWaiting); err != nil {
+		e.debug.Print("Station LED update failed: ", err)
+	}
 	e.debug.Print(p.statsSnapshot())
 	workers.Go(func() {
 		if err := e.output.send(ctx, p.mic, capture.input); err != nil {
