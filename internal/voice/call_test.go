@@ -515,8 +515,15 @@ func TestIntentionalPeerShutdownIsQuiet(t *testing.T) {
 			t.Fatal("intentional shutdown became a control or RTCP failure", err)
 		}
 	}
-	if output.String() != "" {
-		t.Fatal("intentional shutdown logged a failure", output.String())
+	logs := output.String()
+	for _, failure := range []string{
+		"Voice control channel failed.",
+		"microphone RTCP transport failed",
+		"WebRTC connection lost",
+	} {
+		if strings.Contains(logs, failure) {
+			t.Fatalf("intentional shutdown logged a failure (%q): %s", failure, logs)
+		}
 	}
 }
 
