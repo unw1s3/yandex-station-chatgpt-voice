@@ -42,6 +42,18 @@ type runtimeDiagnostics struct {
 	lastVoiceUnixNano  atomic.Int64
 	lastRMSBits        atomic.Uint64
 	lastPeak           atomic.Uint32
+
+	realtimeEvents      atomic.Uint64
+	responseCreated     atomic.Uint64
+	responseDone        atomic.Uint64
+	responseAudioDeltas atomic.Uint64
+	transcriptionDone   atomic.Uint64
+	serverErrors        atomic.Uint64
+
+	lastEventMu        sync.Mutex
+	lastEvent          string
+	lastResponseStatus string
+	lastServerFailure  string
 }
 
 func (d *runtimeDiagnostics) observeRealtimeEvent(ev event) {
