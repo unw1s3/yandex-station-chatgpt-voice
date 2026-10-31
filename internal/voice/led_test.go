@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -39,7 +40,7 @@ func readStationLEDValue(t *testing.T, root, color string, zone int) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return stringTrimSpace(data)
+	return strings.TrimSpace(string(data))
 }
 
 func writeStationClockValue(t *testing.T, root, name, value string) {
