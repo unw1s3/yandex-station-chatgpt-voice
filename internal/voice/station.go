@@ -349,18 +349,7 @@ func runStationEpoch(e *stationEpoch, gate *stationGate, auth credential, settin
 		return errors.New("cannot connect to native processed audio")
 	}
 	capture := newStationCapture(e)
-	var monitor sync.WaitGroup
-	monitor.Go(func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-e.ctx.Done(): return
-			case <-ticker.C: e.debug.Print(e.diag.snapshot())
-			}
-		}
-	})
-	defer monitor.Wait()
+	defer func() { e.debug.Print(e.diag.snapshot()) }()
 	var reader sync.WaitGroup
 	reader.Go(func() {
 		if err := readCapture(e.ctx, conn, capture); err != nil {
