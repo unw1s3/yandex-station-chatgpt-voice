@@ -24,6 +24,8 @@ type stationLED struct {
 	mu      sync.Mutex
 	root    string
 	active  bool
+	state   stationLEDColor
+	hasState bool
 	original map[string]int
 }
 
@@ -64,7 +66,7 @@ func (l *stationLED) activate() error {
 func (l *stationLED) set(color stationLEDColor) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if !l.active {
+	if !l.active || (l.hasState && l.state == color) {
 		return nil
 	}
 	return l.applyLocked(color)
@@ -95,6 +97,8 @@ func (l *stationLED) applyLocked(color stationLEDColor) error {
 			}
 		}
 	}
+	l.state = color
+	l.hasState = true
 	return nil
 }
 
@@ -115,6 +119,7 @@ func (l *stationLED) restoreLocked() error {
 		}
 	}
 	l.active = false
+	l.hasState = false
 	l.original = nil
 	return result
 }
