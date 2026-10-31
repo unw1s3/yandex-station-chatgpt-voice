@@ -107,6 +107,10 @@ func decodeEvent(data []byte) (event, error) {
 		_ = json.Unmarshal(payload, &wrapped)
 		ev.status = direct.Status
 		if ev.status == "" { ev.status = wrapped.Response.Status }
+		if wire.Type == "response.done" && strings.EqualFold(ev.status, "failed") {
+			ev.failure = "response_failed"
+			ev.err = errors.New("ChatGPT response failed")
+		}
 	}
 	switch wire.Type {
 	case "input_audio_buffer.speech_started", "input_audio_buffer.speech_stopped",
