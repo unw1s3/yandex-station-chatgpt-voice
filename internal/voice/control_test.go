@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -165,16 +166,23 @@ func TestControlTerminationCompletionCue(t *testing.T) {
 type blockedControlLog struct {
 	entered chan struct{}
 	release chan struct{}
+	once    sync.Once
 }
 
-func (w blockedControlLog) Write(data []byte) (int, error) {
-	close(w.entered)
-	<-w.release
+func (w *blockedControlLog) Write(data []byte) (int, error) {
+	first := false
+	w.once.Do(func() {
+		first = true
+		close(w.entered)
+	})
+	if first {
+		<-w.release
+	}
 	return len(data), nil
 }
 
 func TestControlFailurePublishedBeforeLog(t *testing.T) {
-	w := blockedControlLog{make(chan struct{}), make(chan struct{})}
+	w := &blockedControlLog{entered: make(chan struct{}), release: make(chan struct{})}
 	p, err := newPeer(t.Context(), webrtc.SettingEngine{}, nil, log.New(w, "", 0))
 	if err != nil {
 		t.Fatal(err)
