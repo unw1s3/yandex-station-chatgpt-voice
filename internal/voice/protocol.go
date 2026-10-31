@@ -15,8 +15,11 @@ import (
 const maxMessageBytes = 256 << 10
 
 type event struct {
-	ended bool
-	err   error
+	ended   bool
+	err     error
+	kind    string
+	status  string
+	failure string
 }
 
 type sessionSettings struct {
@@ -96,7 +99,23 @@ func decodeEvent(data []byte) (event, error) {
 	if len(payload) == 0 {
 		payload = data
 	}
+	ev := event{kind: wire.Type}
+	if wire.Type == "response.created" || wire.Type == "response.done" {
+		var direct struct { Status string `json:"status"` }
+		var wrapped struct { Response struct { Status string `json:"status"` } `json:"response"` }
+		_ = json.Unmarshal(payload, &direct)
+		_ = json.Unmarshal(payload, &wrapped)
+		ev.status = direct.Status
+		if ev.status == "" { ev.status = wrapped.Response.Status }
+	}
 	switch wire.Type {
+	case "input_audio_buffer.speech_started", "input_audio_buffer.speech_stopped",
+		"input_audio_buffer.committed", "conversation.item.input_audio_transcription.completed",
+		"response.created", "response.output_item.added", "response.content_part.added",
+		"response.audio.delta", "response.audio.done", "response.audio_transcript.delta",
+		"response.audio_transcript.done", "response.text.delta", "response.text.done",
+		"response.done", "rate_limits.updated":
+		return ev, nil
 	case "usage_update":
 		var p struct {
 			Instructions struct {
@@ -123,20 +142,42 @@ func decodeEvent(data []byte) (event, error) {
 		}
 		exceeded := len(p.Rate.Exceed) > 0 && string(p.Rate.Exceed) != "null" && string(p.Rate.Exceed) != "false" && string(p.Rate.Exceed) != `""`
 		if p.Instructions.HangUp {
-			return event{ended: true}, nil
+			ev.ended = true
+			return ev, nil
 		}
 		if exceeded || p.Rate.Exceeded || p.Rate.Reached || (remaining != nil && *remaining <= 0) {
-			return event{err: errors.New("ChatGPT ended this call because of its usage limit")}, nil
+			ev.failure = "usage_limit"
+			ev.err = errors.New("ChatGPT ended this call because of its usage limit")
+			return ev, nil
 		}
 	case "tool_update":
 		var p struct {
 			Update string `json:"update_type"`
 		}
 		if json.Unmarshal(payload, &p) == nil && (strings.EqualFold(p.Update, "hangup") || strings.EqualFold(p.Update, "hang_up")) {
-			return event{ended: true}, nil
+			ev.ended = true
 		}
+		return ev, nil
 	case "error":
-		return event{err: errors.New("ChatGPT reported a voice session error")}, nil
+		var p struct {
+			Error struct { Type string `json:"type"`; Code string `json:"code"` } `json:"error"`
+			Code string `json:"code"`
+		}
+		_ = json.Unmarshal(payload, &p)
+		code, kind := strings.ToLower(p.Error.Code), strings.ToLower(p.Error.Type)
+		if code == "" { code = strings.ToLower(p.Code) }
+		switch {
+		case strings.Contains(code, "rate_limit"), strings.Contains(kind, "rate_limit"):
+			ev.failure = "rate_limit"
+		case strings.Contains(code, "quota"), strings.Contains(kind, "quota"):
+			ev.failure = "quota"
+		case strings.Contains(code, "auth"), strings.Contains(kind, "auth"), strings.Contains(code, "token"):
+			ev.failure = "authentication"
+		default:
+			ev.failure = "server_error"
+		}
+		ev.err = errors.New("ChatGPT reported a voice session error (" + ev.failure + ")")
+		return ev, nil
 	}
-	return event{}, nil
+	return ev, nil
 }
