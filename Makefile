@@ -17,7 +17,7 @@ start restart: export BACKEND_MODEL := $(BACKEND_MODEL)
 start restart: export BACKEND_THINKING_EFFORT := $(BACKEND_THINKING_EFFORT)
 auth: export SESSION_JSON := $(SESSION_JSON)
 
-.PHONY: help setup fmt test vet check build clean connect status diagnose diagnose-full report install start stop restart logs debug-logs shell auth
+.PHONY: help setup fmt test vet check build clean connect status diagnose diagnose-full report install start stop restart logs debug-logs follow-logs follow-debug-logs shell auth
 
 help:
 	@printf '%s\n' \
@@ -78,7 +78,7 @@ build:
 clean:
 	rm -rf build
 
-connect status diagnose start stop restart logs debug-logs shell auth:
+connect status diagnose start stop restart logs debug-logs follow-logs follow-debug-logs shell auth:
 	$(PYTHON) tools/station.py --adb "$(ADB)" --ip "$(STATION_IP)" $@
 
 diagnose-full:
