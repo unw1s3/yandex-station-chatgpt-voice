@@ -284,6 +284,32 @@ func serveStation(parent context.Context, conn net.Conn, auth credential, out io
 			epoch.report = report
 			epoch.debug = debug
 			err := attempt(epoch, gate, auth)
+			_, callFailed := errors.AsType[voiceCallError](err)
+			if callFailed && !errors.Is(context.Cause(epoch.ctx), errAlicePriority) {
+				if ledErr := epoch.led.set(stationLEDError); ledErr != nil {
+					epoch.debug.Print("Station LED update failed: ", ledErr)
+				} else {
+					timer := time.NewTimer(900 * time.Millisecond)
+				errorVisible:
+					for {
+						select {
+						case <-timer.C:
+							break errorVisible
+						case <-ctx.Done():
+							timer.Stop()
+							break errorVisible
+						case <-gate.changed:
+							gate.mu.Lock()
+							nativeActive := gate.state != aliceIdle
+							gate.mu.Unlock()
+							if nativeActive {
+								timer.Stop()
+								break errorVisible
+							}
+						}
+					}
+				}
+			}
 			var cue *stationEpoch
 			if err == nil {
 				cue = gate.completion(ctx, epoch)
@@ -301,7 +327,6 @@ func serveStation(parent context.Context, conn net.Conn, auth credential, out io
 			if errors.Is(err, errStationAudio) || errors.Is(err, errCleanup) {
 				return err
 			}
-			_, callFailed := errors.AsType[voiceCallError](err)
 			if callFailed {
 				report.Print("Voice attempt failed: ", err)
 			}
