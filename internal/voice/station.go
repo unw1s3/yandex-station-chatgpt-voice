@@ -37,7 +37,7 @@ type stationEpoch struct {
 
 func newStationEpoch(parent context.Context, number uint64) *stationEpoch {
 	ctx, cancel := context.WithCancelCause(parent)
-	e := &stationEpoch{number: number, ctx: ctx, cancel: cancel, report: log.New(io.Discard, "", 0), debug: log.New(io.Discard, "", 0), diag: &runtimeDiagnostics{}}
+	e := &stationEpoch{number: number, ctx: ctx, cancel: cancel, report: log.New(io.Discard, "", 0), debug: log.New(io.Discard, "", 0), diag: &runtimeDiagnostics{}, led: newStationLED("/sys/class/leds")}
 	e.output = newAudio(e)
 	return e
 }
@@ -123,6 +123,9 @@ func (g *stationGate) finish(e *stationEpoch, result error) error {
 		result = errors.Join(result, cause)
 	}
 	e.revoke(context.Canceled)
+	if err := e.led.restore(); err != nil {
+		e.debug.Print("Station LED restore failed: ", err)
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.current == e {
@@ -391,6 +394,9 @@ func runStationEpoch(e *stationEpoch, gate *stationGate, auth credential, settin
 				return err
 			}
 			e.report.Print("Yandex wake confirmed; connecting voice.")
+			if err := e.led.activate(); err != nil {
+				e.debug.Print("Station LED activation unavailable: ", err)
+			}
 			err = runCall(e, auth, capture, settings)
 			if cause := context.Cause(e.ctx); errors.Is(cause, errStationAudio) && !errors.Is(err, errStationAudio) {
 				return errors.Join(cause, err)
