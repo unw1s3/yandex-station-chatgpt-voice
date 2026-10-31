@@ -40,6 +40,26 @@ func TestAmplifyCapturePCMRespectsPeakHeadroom(t *testing.T) {
 	}
 }
 
+func TestAmplifyPlaybackSample(t *testing.T) {
+	for _, test := range []struct {
+		input int16
+		want  int16
+	}{
+		{1000, 2000},
+		{-1000, -2000},
+		{16000, 32000},
+		{-16000, -32000},
+		{20000, math.MaxInt16},
+		{-20000, math.MinInt16},
+		{math.MaxInt16, math.MaxInt16},
+		{math.MinInt16, math.MinInt16},
+	} {
+		if got := amplifyPlaybackSample(test.input); got != test.want {
+			t.Errorf("amplifyPlaybackSample(%d) = %d, want %d", test.input, got, test.want)
+		}
+	}
+}
+
 func toneFrame(epoch uint64, frame int, hz float64) captureFrame {
 	f := captureFrame{epoch: epoch, sequence: uint64(frame)}
 	for i := range f.pcm {
