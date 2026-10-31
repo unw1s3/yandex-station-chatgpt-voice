@@ -496,8 +496,8 @@ def diagnose(args):
             key, value = line.split("=", 1)
             values[key] = value.strip()
 
-    def result(label, ok, detail=""):
-        state = "OK" if ok else "FAIL"
+    def result(label, ok, detail="", state=None):
+        state = state or ("OK" if ok else "FAIL")
         suffix = f" — {detail}" if detail else ""
         print(f"[{state:4}] {label}{suffix}")
 
@@ -521,7 +521,8 @@ def diagnose(args):
 
     installed = values.get("CLIENT_BIN") == "1"
     running = values.get("PROCESS") == "1"
-    result("Client process", running, "running; executable identity matched" if running else ("not running or PID identity not verified" if installed else "client not installed"))
+    process_detail = "running; executable identity matched" if running else ("not running or PID identity not verified" if installed else "client not installed")
+    result("Client process", running, process_detail, state="OK" if running else "WARN")
     if running:
         ports = parse_proc_net_tcp("\n".join(tcp_lines))
         for port, label in ((9850, "Audio IPC listener :9850"), (9875, "Alice state IPC listener :9875")):
