@@ -31,11 +31,12 @@ type stationEpoch struct {
 	cancel context.CancelCauseFunc
 	output *audio
 	report *log.Logger
+	diag *runtimeDiagnostics
 }
 
 func newStationEpoch(parent context.Context, number uint64) *stationEpoch {
 	ctx, cancel := context.WithCancelCause(parent)
-	e := &stationEpoch{number: number, ctx: ctx, cancel: cancel, report: log.New(io.Discard, "", 0)}
+	e := &stationEpoch{number: number, ctx: ctx, cancel: cancel, report: log.New(io.Discard, "", 0), diag: &runtimeDiagnostics{}}
 	e.output = newAudio(e)
 	return e
 }
@@ -194,6 +195,7 @@ func (c *stationCapture) pushPCM(pcm []byte) error {
 	if !c.epoch.allowed() {
 		return context.Cause(c.epoch.ctx)
 	}
+	c.epoch.diag.observePCM(pcm)
 	if c.phase == captureConnecting {
 		return nil
 	}
@@ -213,6 +215,7 @@ func (c *stationCapture) pushPCM(pcm []byte) error {
 		}
 		select {
 		case output <- c.partial:
+			if c.phase == captureStreaming { c.epoch.diag.streamingFrames.Add(1) } else { c.epoch.diag.detectorFrames.Add(1) }
 			c.partial.sequence++
 			c.used = 0
 		default:
@@ -314,6 +317,7 @@ func serveStation(parent context.Context, conn net.Conn, auth credential, out io
 func runStationEpoch(e *stationEpoch, gate *stationGate, auth credential, settings sessionSettings) (result error) {
 	detector, err := newNativeSpotter()
 	if err != nil {
+		e.diag.spotterInitErrors.Add(1)
 		return err
 	}
 	defer func() {
@@ -332,9 +336,23 @@ func runStationEpoch(e *stationEpoch, gate *stationGate, auth credential, settin
 		return errors.New("cannot connect to native processed audio")
 	}
 	capture := newStationCapture(e)
+	var monitor sync.WaitGroup
+	monitor.Go(func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-e.ctx.Done(): return
+			case <-ticker.C: e.report.Print(e.diag.snapshot())
+			}
+		}
+	})
+	defer monitor.Wait()
 	var reader sync.WaitGroup
 	reader.Go(func() {
 		if err := readCapture(e.ctx, conn, capture); err != nil {
+			e.diag.captureReadErrors.Add(1)
+			if errors.Is(err, errCaptureStall) { e.diag.captureStalls.Add(1) }
 			e.revoke(fmt.Errorf("%w: %w", errStationAudio, err))
 		}
 	})
@@ -350,11 +368,13 @@ func runStationEpoch(e *stationEpoch, gate *stationGate, auth credential, settin
 			}
 			confirmed, err := detector.feed(frame.pcm[:])
 			if err != nil {
+				e.diag.spotterFeedErrors.Add(1)
 				return err
 			}
 			if !confirmed {
 				continue
 			}
+			e.diag.wakeDetections.Add(1)
 			if err := gate.activate(e); err != nil {
 				return err
 			}
