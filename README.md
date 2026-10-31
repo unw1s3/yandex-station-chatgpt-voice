@@ -153,7 +153,7 @@ failure and produces no completion tone.
 | `make stop`            | Stop the client. Alice remains available.                                        |
 | `make restart`         | Stop and start the client.                                                       |
 | `make logs`            | Show the latest 60 important runtime events, then exit.                           |
-| `make debug-logs`      | Show the latest 100 detailed WebRTC, Realtime, and audio events, then exit.        |
+| `make debug-logs`      | Show the latest 40 detailed WebRTC, Realtime, and audio events, then exit.          |
 | `make follow-logs`      | Follow important runtime events until Ctrl+C.                                    |
 | `make follow-debug-logs`| Follow detailed diagnostics until Ctrl+C.                                        |
 | `make shell`           | Open an ADB shell on the selected Station.                                       |
@@ -190,8 +190,9 @@ Root access and the original Alice services are kept.
   `make debug-logs` to inspect the latest WebRTC, Realtime events, and audio metrics. Both commands
   print a bounded snapshot and exit; use the corresponding `follow-*` command for live output.
   Detailed logs contain events during a voice attempt and one audio summary when it ends, not
-  periodic counter dumps. The debug log is capped at 1 MiB with two rotated backups. The runtime
-  log is rotated above 256 KiB when the client starts. Neither log records conversation text or audio.
+  periodic counter dumps. Each client start begins fresh runtime and debug logs; the two previous
+  runs are retained as numbered backups. The debug log is capped at 256 KiB during a run. Log
+  commands show only a short tail. Neither log records conversation text or audio.
   Confirm that Alice is idle and that the Station itself can reach ChatGPT. `status` checks local
   files and the process, not ChatGPT access.
 - **401 or expired session.** Import a fresh token with `make auth`, then run `make restart`.
