@@ -422,6 +422,21 @@ func runStationEpoch(e *stationEpoch, gate *stationGate, auth credential, settin
 			e.report.Print("Yandex wake confirmed; connecting voice.")
 			if err := e.led.activate(); err != nil {
 				e.debug.Print("Station LED activation unavailable: ", err)
+			} else {
+				go func() {
+					ticker := time.NewTicker(time.Second)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-e.ctx.Done():
+							return
+						case <-ticker.C:
+							if err := e.led.refreshClockBrightness(); err != nil {
+								e.debug.Print("Station LED clock-brightness update failed: ", err)
+							}
+						}
+					}
+				}()
 			}
 			err = runCall(e, auth, capture, settings)
 			if cause := context.Cause(e.ctx); errors.Is(cause, errStationAudio) && !errors.Is(err, errStationAudio) {
