@@ -101,9 +101,17 @@ start_client() {
         return 0
     fi
     [ -f "$app/client" ] && [ ! -L "$app/client" ] && [ -x "$app/client" ] || die 'Install the client first.'
-    [ ! -L "$log" ] || die 'Log must not be a symlink.'
-    if [ -e "$log" ]; then
-        [ -f "$log" ] || die 'Log must be a regular file.'
+    [ ! -L "$log" ] && [ ! -L "$log.1" ] && [ ! -L "$log.2" ] || die 'Log paths must not be symlinks.'
+    for path in "$log" "$log.1" "$log.2"; do
+        if [ -e "$path" ]; then [ -f "$path" ] || die 'Log paths must be regular files.'; fi
+    done
+    if [ -f "$log" ]; then
+        size=$(wc -c < "$log") || die 'Cannot inspect runtime log size.'
+        if [ "$size" -gt 262144 ]; then
+            rm -f "$log.2"
+            [ ! -f "$log.1" ] || mv "$log.1" "$log.2"
+            mv "$log" "$log.1"
+        fi
     fi
     if [ -e "$log" ]; then chmod 600 "$log"; fi
     : >> "$log"
