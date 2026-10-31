@@ -19,6 +19,7 @@ import warnings
 
 APP = "/data/yandex-station-chatgpt-voice"
 LOG = "/tmp/yandex-station-chatgpt-voice.log"
+DEBUG_LOG = "/tmp/yandex-station-chatgpt-voice.debug.log"
 LIBS = "/system/vendor/quasar/libs:/system/vendor/lib:/system/lib:/usr/lib:/lib"
 BINARY = Path(__file__).resolve().parent.parent / "build/yandex-station-chatgpt-voice"
 LIMIT = 1 << 20
@@ -554,6 +555,7 @@ def main():
             "stop",
             "restart",
             "logs",
+            "debug-logs",
             "shell",
             "auth",
             "diagnose",
@@ -583,11 +585,13 @@ def main():
     if args.action == "diagnose":
         diagnose(args)
         return
-    if args.action in ("logs", "shell"):
+    if args.action in ("logs", "debug-logs", "shell"):
         adb_shell(args, COMMON + "true\n")
         command = [args.adb, "-s", args.serial, "shell"]
         if args.action == "logs":
             command.append(f"tail -n 100 -f {shlex.quote(LOG)}")
+        elif args.action == "debug-logs":
+            command.append(f"tail -n 100 -f {shlex.quote(DEBUG_LOG)}")
         raise SystemExit(subprocess.call(command))
     data = arm_binary(BINARY) if args.action == "install" else None
     session = session_input(args.session_json) if args.action == "auth" else None
