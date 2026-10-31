@@ -23,6 +23,7 @@ type runtimeDiagnostics struct {
 	captureStalls      atomic.Uint64
 	captureReadErrors  atomic.Uint64
 	captureQueueDrops  atomic.Uint64
+	firstPCMUnixNano   atomic.Int64
 	lastPCMUnixNano    atomic.Int64
 	lastVoiceUnixNano  atomic.Int64
 	lastRMSBits        atomic.Uint64
@@ -52,6 +53,7 @@ func (d *runtimeDiagnostics) observePCM(pcm []byte) {
 	d.pcmChunks.Add(1)
 	d.pcmBytes.Add(uint64(len(pcm)))
 	d.pcmSamples.Add(uint64(samples))
+	d.firstPCMUnixNano.CompareAndSwap(0, now.UnixNano())
 	d.lastPCMUnixNano.Store(now.UnixNano())
 	d.lastRMSBits.Store(math.Float64bits(rms))
 	d.lastPeak.Store(peak)
@@ -69,10 +71,10 @@ func (d *runtimeDiagnostics) snapshot() string {
 	if lastPCM != 0 {
 		pcmAge = now.Sub(time.Unix(0, lastPCM)).Round(time.Millisecond).String()
 	}
-	silence := "no non-silent PCM observed"
-	if lastVoice != 0 {
-		silence = now.Sub(time.Unix(0, lastVoice)).Round(time.Millisecond).String()
-	}
+	silence := "not observed"
+	silenceSince := lastVoice
+	if silenceSince == 0 { silenceSince = d.firstPCMUnixNano.Load() }
+	if silenceSince != 0 { silence = now.Sub(time.Unix(0, silenceSince)).Round(time.Millisecond).String() }
 	return fmt.Sprintf(
 		"Runtime audio: chunks=%d bytes=%d samples=%d detector_frames=%d streaming_frames=%d last_pcm_age=%s rms=%.0f peak=%d silence=%s spotter_init_errors=%d spotter_feed_errors=%d wake_detections=%d capture_stalls=%d capture_read_errors=%d queue_overflows=%d",
 		d.pcmChunks.Load(), d.pcmBytes.Load(), d.pcmSamples.Load(),
