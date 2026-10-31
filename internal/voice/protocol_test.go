@@ -86,7 +86,7 @@ func TestEventDiagnosticSummaryOnlyIncludesSafeMetadata(t *testing.T) {
 		t.Fatalf("summary leaked payload text: %q", summary)
 	}
 	state := eventDiagnosticSummary(testEnvelope(t, `{"type":"state_update","payload":{"new_state":"speaking"}}`))
-	if !strings.Contains(state, "type=state_update") { t.Fatalf("state event missing: %q", state) }
+	if !strings.Contains(state, "type=state_update") || !strings.Contains(state, "payload_fields=new_state") { t.Fatalf("state event metadata missing: %q", state) }
 }
 
 func TestMalformedDataMessage(t *testing.T) {
