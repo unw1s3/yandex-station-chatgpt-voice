@@ -2,6 +2,7 @@ package voice
 
 import (
 	"encoding/binary"
+	"math"
 	"strings"
 	"testing"
 	"time"
