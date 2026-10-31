@@ -30,6 +30,9 @@ help:
 	  'clean    Remove build output; retain config, credentials and toolchain cache' \
 	  'connect  Connect ADB to STATION_IP:5555' \
 	  'status   Inspect root, install, process and session permissions' \
+	  'diagnose Run safe read-only component and process diagnostics' \
+	  'diagnose-full Reserved for future runtime telemetry' \
+	  'report   Write a sanitized diagnostic report to diagnostics-report.txt' \
 	  'install  Build, verify, stop the old client and install; leave stopped' \
 	  'start    Start the installed client' \
 	  'stop     Stop only the verified client process' \
@@ -81,7 +84,7 @@ diagnose-full:
 	@echo 'diagnose-full is not implemented yet; run make diagnose.' >&2
 	@exit 2
 
-report: diagnose
+report:
 	@$(PYTHON) tools/station.py --adb "$(ADB)" --ip "$(STATION_IP)" diagnose > diagnostics-report.txt
 	@echo 'Sanitized report written to diagnostics-report.txt'
 
