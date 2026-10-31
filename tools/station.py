@@ -423,6 +423,120 @@ done
     print(output.decode(errors="replace").strip())
 
 
+
+DIAGNOSTIC_PATHS = {
+    "APP_DIR": APP,
+    "CLIENT_BIN": f"{APP}/client",
+    "SESSION_FILE": f"{APP}/session.json",
+    "LIB_LOADER": "/lib/ld-linux-armhf.so.3",
+    "LIB_ICONV": "/system/vendor/quasar/libs/libiconv.so",
+    "LIB_TFLITE": "/system/vendor/quasar/libs/libtflite.so",
+    "LIB_YANDEX": "/system/vendor/quasar/libs/libyandex_evil.so",
+    "WAKE_MODEL": "/system/vendor/quasar/spotter_models/activation/yandex",
+    "ALSA_DEVICE": "/dev/snd",
+    "ALSA_PLAYER": "/usr/bin/aplay",
+}
+
+
+def parse_proc_net_tcp(data):
+    """Return listening IPv4/IPv6 ports from Linux procfs socket tables."""
+    ports = set()
+    for line in data.splitlines()[1:]:
+        fields = line.split()
+        if len(fields) < 4 or fields[3] != "0A":
+            continue
+        try:
+            ports.add(int(fields[1].rsplit(":", 1)[1], 16))
+        except (ValueError, IndexError):
+            continue
+    return ports
+
+
+def diagnostic_script():
+    lines = ["set +e", "printf 'ROOT=%s\\n' \"$(id -u)\""]
+    for key, path in DIAGNOSTIC_PATHS.items():
+        q = shlex.quote(path)
+        if key == "APP_DIR" or key in ("ALSA_DEVICE", "WAKE_MODEL"):
+            test = f'[ -d {q} ]' + (f' && [ ! -L {q} ]' if key == "APP_DIR" else "")
+        elif key == "CLIENT_BIN":
+            test = f'[ -f {q} ] && [ ! -L {q} ] && [ -x {q} ]'
+        elif key == "SESSION_FILE":
+            test = f'[ -f {q} ] && [ ! -L {q} ]'
+        else:
+            test = f'[ -f {q} ] && [ -r {q} ]'
+        lines.append(f"{test} && echo {key}=1 || echo {key}=0")
+    lines.extend([
+        'pidfile=/tmp/yandex-station-chatgpt-voice/client.pid',
+        'if [ -f "$pidfile" ] && [ ! -L "$pidfile" ]; then',
+        '  pid=$(cat "$pidfile" 2>/dev/null)',
+        '  case "$pid" in ""|*[!0-9]*) echo PROCESS=0 ;;',
+        '  *) if [ -d "/proc/$pid" ] && [ "$(readlink -f "/proc/$pid/exe" 2>/dev/null)" = "$(readlink -f /data/yandex-station-chatgpt-voice/client 2>/dev/null)" ]; then echo PROCESS=1; else echo PROCESS=0; fi ;;',
+        '  esac',
+        'else echo PROCESS=0; fi',
+        'cat /proc/net/tcp /proc/net/tcp6 2>/dev/null',
+    ])
+    return "\n".join(lines)
+
+
+def diagnose(args):
+    # Read-only snapshot: no IPC connection, process signal, token read,
+    # network request, audio capture, or remote temporary file.
+    output = adb_run(
+        args, "shell", "sh -c " + shlex.quote(diagnostic_script()), quiet=True
+    ).decode(errors="replace")
+    values = {}
+    tcp_lines = []
+    in_tcp = False
+    for line in output.splitlines():
+        if line.startswith(" ") or line.startswith("sl "):
+            in_tcp = True
+        if in_tcp:
+            tcp_lines.append(line)
+        elif "=" in line:
+            key, value = line.split("=", 1)
+            values[key] = value.strip()
+
+    def result(label, ok, detail=""):
+        state = "OK" if ok else "FAIL"
+        suffix = f" — {detail}" if detail else ""
+        print(f"[{state:4}] {label}{suffix}")
+
+    print("Yandex Station diagnostics (read-only; no audio/session tests)")
+    root_ok = values.get("ROOT") == "0"
+    result("Root ADB", root_ok, "UID 0" if root_ok else "root access unavailable")
+    checks = (
+        ("APP_DIR", "Application directory"),
+        ("CLIENT_BIN", "Installed client binary"),
+        ("LIB_LOADER", "ARM hard-float loader"),
+        ("LIB_ICONV", "libiconv"),
+        ("LIB_TFLITE", "TensorFlow Lite runtime"),
+        ("LIB_YANDEX", "Yandex native runtime"),
+        ("WAKE_MODEL", "Wake-word model directory"),
+        ("ALSA_PLAYER", "ALSA aplay binary"),
+        ("ALSA_DEVICE", "ALSA device directory"),
+    )
+    for key, label in checks:
+        ok = values.get(key) == "1"
+        result(label, ok, "present" if ok else "missing or inaccessible")
+
+    installed = values.get("CLIENT_BIN") == "1"
+    running = values.get("PROCESS") == "1"
+    result("Client process", running, "running; executable identity matched" if running else ("not running or PID identity not verified" if installed else "client not installed"))
+    if running:
+        ports = parse_proc_net_tcp("\n".join(tcp_lines))
+        for port, label in ((9850, "Audio IPC listener :9850"), (9875, "Alice state IPC listener :9875")):
+            result(label, port in ports, "LISTEN" if port in ports else "not listening")
+    else:
+        print("[SKIP] IPC listeners — client is not verified as running")
+
+    print("[SKIP] Physical microphone — hardware input is mediated by station firmware")
+    print("[SKIP] PCM capture / wake-word detections — no competing IPC reader is opened")
+    print("[SKIP] ChatGPT authentication / signaling / WebRTC — no session is created")
+    print("[SKIP] Speaker playback — no test audio is played")
+    print("[INFO] Session file: existence only; credentials were not read")
+    print("[INFO] IPC checks inspect procfs only; no connection was opened")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--adb", default="adb")
@@ -440,6 +554,7 @@ def main():
             "logs",
             "shell",
             "auth",
+            "diagnose",
         ),
     )
     args = parser.parse_args()
@@ -462,6 +577,9 @@ def main():
         return
     if args.action == "status":
         status(args)
+        return
+    if args.action == "diagnose":
+        diagnose(args)
         return
     if args.action in ("logs", "shell"):
         adb_shell(args, COMMON + "true\n")
