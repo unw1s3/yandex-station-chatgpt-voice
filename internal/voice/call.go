@@ -228,7 +228,11 @@ func (p *peer) outcome(result error) error {
 func (p *peer) handleMessage(data []byte) {
 	if p.ctx.Err() != nil { return }
 	ev, err := decodeEvent(data)
-	if err != nil { p.fail(err); return }
+	if err != nil {
+		p.debug.Printf("Realtime event decode failed: bytes=%d error=%v.", len(data), err)
+		p.fail(err)
+		return
+	}
 	if p.diag != nil { p.diag.observeRealtimeEvent(ev) }
 	if ev.kind != "" {
 		if ev.status != "" { p.debug.Printf("ChatGPT event: %s status=%s.", ev.kind, ev.status)
