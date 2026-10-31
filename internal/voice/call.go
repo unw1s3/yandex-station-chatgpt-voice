@@ -41,6 +41,7 @@ type peer struct {
 	close     func() error
 	closing   atomic.Bool
 	report    *log.Logger
+	debug     *log.Logger
 	failureMu sync.Mutex
 	failure   error
 	diag      *runtimeDiagnostics
@@ -52,7 +53,7 @@ func newPeer(ctx context.Context, settings webrtc.SettingEngine, servers []webrt
 	settings.LoggerFactory = &logging.DefaultLoggerFactory{Writer: io.Discard, DefaultLogLevel: logging.LogLevelDisabled}
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(settings))
 	ctx, cancel := context.WithCancelCause(ctx)
-	p := &peer{report: report, ctx: ctx, cancel: cancel, ready: make(chan struct{}), tracks: make(chan *webrtc.TrackRemote, 1)}
+	p := &peer{report: report, debug: log.New(io.Discard, "", 0), ctx: ctx, cancel: cancel, ready: make(chan struct{}), tracks: make(chan *webrtc.TrackRemote, 1)}
 	if len(diagnostics) > 0 { p.diag = diagnostics[0] }
 	var err error
 	p.pc, err = api.NewPeerConnection(webrtc.Configuration{ICEServers: servers, BundlePolicy: webrtc.BundlePolicyMaxBundle})
@@ -96,6 +97,7 @@ func newPeer(ctx context.Context, settings webrtc.SettingEngine, servers []webrt
 	}
 	p.dc.OnOpen(sync.OnceFunc(func() { close(p.ready); p.report.Print("WebRTC DataChannel open.") }))
 	p.dc.OnMessage(func(message webrtc.DataChannelMessage) {
+		p.debug.Printf("DataChannel message received: bytes=%d text=%t.", len(message.Data), message.IsString)
 		if !message.IsString {
 			p.fail(errors.New("unexpected binary voice control message"))
 			return
@@ -229,9 +231,9 @@ func (p *peer) handleMessage(data []byte) {
 	if err != nil { p.fail(err); return }
 	if p.diag != nil { p.diag.observeRealtimeEvent(ev) }
 	if ev.kind != "" {
-		if ev.status != "" { p.report.Printf("ChatGPT event: %s status=%s.", ev.kind, ev.status)
-		} else if ev.failure != "" { p.report.Printf("ChatGPT event: %s category=%s.", ev.kind, ev.failure)
-		} else { p.report.Printf("ChatGPT event: %s.", ev.kind) }
+		if ev.status != "" { p.debug.Printf("ChatGPT event: %s status=%s.", ev.kind, ev.status)
+		} else if ev.failure != "" { p.debug.Printf("ChatGPT event: %s category=%s.", ev.kind, ev.failure)
+		} else { p.debug.Printf("ChatGPT event: %s.", ev.kind) }
 	}
 	if ev.err != nil {
 		p.report.Printf("ChatGPT response error: %v.", ev.err)
@@ -393,6 +395,7 @@ func runCall(e *stationEpoch, auth credential, capture *stationCapture, settings
 	if err != nil {
 		return err
 	}
+	p.debug = e.debug
 	shutdown := sync.OnceValue(func() error {
 		e.revoke(context.Canceled)
 		return errors.Join(e.output.close(), p.close())
@@ -414,7 +417,7 @@ func runCall(e *stationEpoch, auth credential, capture *stationCapture, settings
 		for {
 			select {
 			case <-p.ctx.Done(): return
-			case <-ticker.C: e.report.Print(p.statsSnapshot())
+			case <-ticker.C: e.debug.Print(p.statsSnapshot())
 			}
 		}
 	})
@@ -491,7 +494,7 @@ func runCall(e *stationEpoch, auth credential, capture *stationCapture, settings
 	finishSetup()
 	e.diag.setupDurationMs.Store(time.Since(setupStarted).Milliseconds())
 	e.report.Printf("Voice media ready; setup=%s.", time.Since(setupStarted).Round(time.Millisecond))
-	e.report.Print(p.statsSnapshot())
+	e.debug.Print(p.statsSnapshot())
 	workers.Go(func() {
 		if err := e.output.send(ctx, p.mic, capture.input); err != nil {
 			e.revoke(err)
