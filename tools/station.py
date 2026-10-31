@@ -31,6 +31,7 @@ app=/data/yandex-station-chatgpt-voice
 runtime=/tmp/yandex-station-chatgpt-voice
 lock=/data/.yandex-station-chatgpt-voice.lock
 log=/tmp/yandex-station-chatgpt-voice.log
+debug=/tmp/yandex-station-chatgpt-voice.debug.log
 die() { echo "$*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die 'Root ADB is required; enable it explicitly.'
 private_dir() {
@@ -101,21 +102,26 @@ start_client() {
         return 0
     fi
     [ -f "$app/client" ] && [ ! -L "$app/client" ] && [ -x "$app/client" ] || die 'Install the client first.'
-    [ ! -L "$log" ] && [ ! -L "$log.1" ] && [ ! -L "$log.2" ] || die 'Log paths must not be symlinks.'
-    for path in "$log" "$log.1" "$log.2"; do
-        if [ -e "$path" ]; then [ -f "$path" ] || die 'Log paths must be regular files.'; fi
+    for base in "$log" "$debug"; do
+        for path in "$base" "$base.1" "$base.2"; do
+            [ ! -L "$path" ] || die 'Log paths must not be symlinks.'
+            if [ -e "$path" ]; then [ -f "$path" ] || die 'Log paths must be regular files.'; fi
+        done
     done
-    if [ -f "$log" ]; then
-        size=$(wc -c < "$log") || die 'Cannot inspect runtime log size.'
-        if [ "$size" -gt 262144 ]; then
-            rm -f "$log.2"
-            [ ! -f "$log.1" ] || mv "$log.1" "$log.2"
-            mv "$log" "$log.1"
+    # Start each run with fresh current logs; retain only the two previous runs.
+    for base in "$log" "$debug"; do
+        rm -f "$base.2"
+        if [ -f "$base.1" ]; then
+            chmod 600 "$base.1"
+            mv "$base.1" "$base.2"
         fi
-    fi
-    if [ -e "$log" ]; then chmod 600 "$log"; fi
-    : >> "$log"
-    chmod 600 "$log"
+        if [ -f "$base" ]; then
+            chmod 600 "$base"
+            mv "$base" "$base.1"
+        fi
+        : >> "$base"
+        chmod 600 "$base"
+    done
     rm -f "$runtime/client.pid"
     expected=$(readlink -f "$app/client") || die 'Cannot resolve installed executable.'
     LD_LIBRARY_PATH=__LIBS__ setsid nohup sh -c '
@@ -603,7 +609,7 @@ def main():
             if args.action == "follow-logs":
                 command.append("-f")
         elif args.action in ("debug-logs", "follow-debug-logs"):
-            command.extend(["tail", "-n", "100", DEBUG_LOG])
+            command.extend(["tail", "-n", "40", DEBUG_LOG])
             if args.action == "follow-debug-logs":
                 command.append("-f")
         raise SystemExit(subprocess.call(command))
