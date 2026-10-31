@@ -54,8 +54,6 @@ type runtimeDiagnostics struct {
 	lastPeak           atomic.Uint32
 	maxCaptureRMSBits atomic.Uint64
 	maxCapturePeak    atomic.Uint32
-	maxCaptureBERMSBits atomic.Uint64
-	maxCaptureBEPeak atomic.Uint32
 	outboundPCMFrames atomic.Uint64
 	outboundVoiceFrames atomic.Uint64
 	maxOutboundRMSBits atomic.Uint64
@@ -114,16 +112,9 @@ func (d *runtimeDiagnostics) observePCM(pcm []byte) {
 	}
 	var sumSquares uint64
 	var peak uint32
-	var beSumSquares uint64
-	var bePeak uint32
 	samples := len(pcm) / 2
 	for i := 0; i < len(pcm); i += 2 {
 		value := int16(uint16(pcm[i]) | uint16(pcm[i+1])<<8)
-		beValue := int16(uint16(pcm[i+1]) | uint16(pcm[i])<<8)
-		beMagnitude := uint32(beValue)
-		if beValue < 0 { beMagnitude = uint32(-int32(beValue)) }
-		if beMagnitude > bePeak { bePeak = beMagnitude }
-		beSumSquares += uint64(int64(beValue) * int64(beValue))
 		magnitude := uint32(value)
 		if value < 0 {
 			magnitude = uint32(-int32(value))
@@ -144,8 +135,6 @@ func (d *runtimeDiagnostics) observePCM(pcm []byte) {
 	d.lastPeak.Store(peak)
 	storeMaxRMS(&d.maxCaptureRMSBits, rms)
 	storeMaxPeak(&d.maxCapturePeak, peak)
-	storeMaxRMS(&d.maxCaptureBERMSBits, math.Sqrt(float64(beSumSquares)/float64(samples)))
-	storeMaxPeak(&d.maxCaptureBEPeak, bePeak)
 	if rms >= diagnosticSilenceFloor {
 		d.lastVoiceUnixNano.Store(now.UnixNano())
 	}
@@ -260,11 +249,10 @@ func (d *runtimeDiagnostics) snapshot() string {
 	lastEvent, responseStatus, serverFailure := d.lastEvent, d.lastResponseStatus, d.lastServerFailure
 	d.lastEventMu.Unlock()
 	return fmt.Sprintf(
-		"Runtime audio: chunks=%d bytes=%d samples=%d detector_frames=%d streaming_frames=%d last_pcm_age=%s rms=%.0f peak=%d capture_max_rms=%.0f capture_max_peak=%d capture_be_max_rms=%.0f capture_be_max_peak=%d opus_input_frames=%d opus_input_voice_frames=%d opus_input_max_rms=%.0f opus_input_max_peak=%d silence=%s silence_floor=%d spotter_init_errors=%d spotter_feed_errors=%d wake_detections=%d capture_stalls=%d capture_read_errors=%d queue_overflows=%d opus_out_packets=%d opus_out_bytes=%d rtp_in_packets=%d rtp_in_bytes=%d decoded_samples=%d inbound_pcm_blocks=%d inbound_pcm_silent_blocks=%d inbound_pcm_rms=%.0f inbound_pcm_peak=%d playback_blocks=%d playback_queue_depth=%d playback_queue_max=%d playback_queue_drops=%d playback_output_frames=%d playback_output_rms=%.0f playback_output_peak=%d playback_silent_callbacks=%d playback_nonzero_frames=%d setup_ms=%d signaling_attempts=%d signaling_http_status=%d signaling_ms=%d signaling_ok=%t realtime_events=%d response_created=%d response_done=%d response_audio_deltas=%d transcription_done=%d server_errors=%d last_event=%s response_status=%s server_failure=%s",
+		"Runtime audio: chunks=%d bytes=%d samples=%d detector_frames=%d streaming_frames=%d last_pcm_age=%s rms=%.0f peak=%d capture_max_rms=%.0f capture_max_peak=%d capture_gain=%d opus_input_frames=%d opus_input_voice_frames=%d opus_input_max_rms=%.0f opus_input_max_peak=%d silence=%s silence_floor=%d spotter_init_errors=%d spotter_feed_errors=%d wake_detections=%d capture_stalls=%d capture_read_errors=%d queue_overflows=%d opus_out_packets=%d opus_out_bytes=%d rtp_in_packets=%d rtp_in_bytes=%d decoded_samples=%d inbound_pcm_blocks=%d inbound_pcm_silent_blocks=%d inbound_pcm_rms=%.0f inbound_pcm_peak=%d playback_blocks=%d playback_queue_depth=%d playback_queue_max=%d playback_queue_drops=%d playback_output_frames=%d playback_output_rms=%.0f playback_output_peak=%d playback_silent_callbacks=%d playback_nonzero_frames=%d setup_ms=%d signaling_attempts=%d signaling_http_status=%d signaling_ms=%d signaling_ok=%t realtime_events=%d response_created=%d response_done=%d response_audio_deltas=%d transcription_done=%d server_errors=%d last_event=%s response_status=%s server_failure=%s",
 		d.pcmChunks.Load(), d.pcmBytes.Load(), d.pcmSamples.Load(),
 		d.detectorFrames.Load(), d.streamingFrames.Load(), pcmAge, rms,
-		d.lastPeak.Load(), math.Float64frombits(d.maxCaptureRMSBits.Load()), d.maxCapturePeak.Load(),
-		math.Float64frombits(d.maxCaptureBERMSBits.Load()), d.maxCaptureBEPeak.Load(),
+		d.lastPeak.Load(), math.Float64frombits(d.maxCaptureRMSBits.Load()), d.maxCapturePeak.Load(), captureGain,
 		d.outboundPCMFrames.Load(), d.outboundVoiceFrames.Load(),
 		math.Float64frombits(d.maxOutboundRMSBits.Load()), d.maxOutboundPeak.Load(),
 		silence, diagnosticSilenceFloor, d.spotterInitErrors.Load(),
