@@ -187,6 +187,8 @@ func decodeEvent(data []byte) (event, error) {
 		ev.err = errors.New("ChatGPT reported a voice session error")
 		return ev, nil
 	}
-	if wire.Type != "" { ev.kind = "unrecognized:" + wire.Type }
+	if wire.Type != "" {
+		ev.kind = "unrecognized:" + wire.Type
+	}
 	return ev, nil
 }
