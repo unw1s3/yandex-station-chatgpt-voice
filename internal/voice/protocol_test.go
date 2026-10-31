@@ -76,6 +76,19 @@ func TestUnknownEventDataShapes(t *testing.T) {
 	}
 }
 
+func TestEventDiagnosticSummaryOnlyIncludesSafeMetadata(t *testing.T) {
+	raw := testEnvelope(t, `{"type":"error","error":{"code":"rate_limit_exceeded","type":"server_error","message":"private conversation text"}}`)
+	summary := eventDiagnosticSummary(raw)
+	for _, want := range []string{"type=error", "error_type=server_error", "error_code=rate_limit_exceeded"} {
+		if !strings.Contains(summary, want) { t.Fatalf("summary %q missing %q", summary, want) }
+	}
+	if strings.Contains(summary, "private") || strings.Contains(summary, "conversation") {
+		t.Fatalf("summary leaked payload text: %q", summary)
+	}
+	state := eventDiagnosticSummary(testEnvelope(t, `{"type":"state_update","payload":{"new_state":"speaking"}}`))
+	if !strings.Contains(state, "type=state_update") { t.Fatalf("state event missing: %q", state) }
+}
+
 func TestMalformedDataMessage(t *testing.T) {
 	for _, raw := range []string{
 		`{"type":"data_message"}`,
