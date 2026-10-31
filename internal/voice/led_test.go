@@ -8,6 +8,16 @@ import (
 	"testing"
 )
 
+func newTestStationLED(root string) *stationLED {
+	led := newTestStationLED(root)
+	// Regular files do not have sysfs brightness semantics: emulate sysfs by
+	// replacing the whole value on each write.
+	led.writeBrightness = func(path string, value int) error {
+		return os.WriteFile(path, []byte(strconv.Itoa(value)), 0o644)
+	}
+	return led
+}
+
 func makeStationLEDFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -139,7 +149,7 @@ func TestStationLEDFollowsClockBrightness(t *testing.T) {
 }
 
 func TestStationLEDUnavailableDoesNotActivate(t *testing.T) {
-	led := newStationLED(t.TempDir())
+	led := newTestStationLED(t.TempDir())
 	if err := led.activate(); err == nil {
 		t.Fatal("activation succeeded without clock or sysfs LEDs")
 	}
