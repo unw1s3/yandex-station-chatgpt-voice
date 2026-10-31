@@ -233,6 +233,10 @@ func runStation(parent context.Context, credentialFile string, settings sessionS
 	if err != nil {
 		return err
 	}
+	debugFile, err := openRotatingLog(debugLogPath, debugLogMax)
+	if err != nil { return err }
+	defer debugFile.Close()
+	debug := log.New(debugFile, "", log.LstdFlags|log.Lmicroseconds)
 	conn, err := dialStation(parent, "127.0.0.1:9875")
 	if err != nil {
 		if parent.Err() != nil {
@@ -240,10 +244,6 @@ func runStation(parent context.Context, credentialFile string, settings sessionS
 		}
 		return errors.New("cannot connect to native Alice state")
 	}
-	debugFile, err := openRotatingLog(debugLogPath, debugLogMax)
-	if err != nil { return err }
-	defer debugFile.Close()
-	debug := log.New(debugFile, "", log.LstdFlags|log.Lmicroseconds)
 	return serveStation(parent, conn, auth, out, func(e *stationEpoch, gate *stationGate, auth credential) error {
 		return runStationEpoch(e, gate, auth, settings)
 	}, playEndCue, debug)
