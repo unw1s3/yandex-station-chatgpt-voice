@@ -77,7 +77,7 @@ build:
 clean:
 	rm -rf build
 
-connect status diagnose start stop restart logs shell auth:
+connect status diagnose start stop restart logs debug-logs shell auth:
 	$(PYTHON) tools/station.py --adb "$(ADB)" --ip "$(STATION_IP)" $@
 
 diagnose-full:
