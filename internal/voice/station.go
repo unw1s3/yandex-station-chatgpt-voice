@@ -219,6 +219,7 @@ func (c *stationCapture) pushPCM(pcm []byte) error {
 			c.partial.sequence++
 			c.used = 0
 		default:
+			c.epoch.diag.captureQueueDrops.Add(1)
 			c.epoch.revoke(errCaptureOverflow)
 			return errCaptureOverflow
 		}
@@ -351,9 +352,11 @@ func runStationEpoch(e *stationEpoch, gate *stationGate, auth credential, settin
 	var reader sync.WaitGroup
 	reader.Go(func() {
 		if err := readCapture(e.ctx, conn, capture); err != nil {
-			e.diag.captureReadErrors.Add(1)
-			if errors.Is(err, errCaptureStall) { e.diag.captureStalls.Add(1) }
-			e.revoke(fmt.Errorf("%w: %w", errStationAudio, err))
+			if e.ctx.Err() == nil {
+				e.diag.captureReadErrors.Add(1)
+				if errors.Is(err, errCaptureStall) { e.diag.captureStalls.Add(1) }
+				e.revoke(fmt.Errorf("%w: %w", errStationAudio, err))
+			}
 		}
 	})
 	defer func() { e.revoke(context.Canceled); reader.Wait() }()
