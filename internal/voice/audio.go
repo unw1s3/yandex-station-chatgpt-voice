@@ -121,6 +121,7 @@ func (a *audio) callback(output, _ []byte, frames uint32) {
 		return
 	}
 	var writtenFrames uint64
+	var nonzeroFrames uint64
 	for i := 0; i < min(int(frames), len(output)/4); i++ {
 		if !a.epoch.allowed() {
 			clear(output)
@@ -134,6 +135,7 @@ func (a *audio) callback(output, _ []byte, frames uint32) {
 				}
 				a.current = block
 				a.currentAt = 0
+				a.epoch.diag.setPlaybackQueueDepth(len(a.playback))
 			default:
 				attempt = cap(a.playback)
 			}
@@ -144,10 +146,16 @@ func (a *audio) callback(output, _ []byte, frames uint32) {
 		left, right := a.current.pcm[a.currentAt*2], a.current.pcm[a.currentAt*2+1]
 		binary.LittleEndian.PutUint16(output[i*4:], uint16(left))
 		binary.LittleEndian.PutUint16(output[i*4+2:], uint16(right))
+		if left != 0 || right != 0 {
+			nonzeroFrames++
+		}
 		a.currentAt++
 		writtenFrames++
 	}
-	if writtenFrames > 0 { a.epoch.diag.playbackOutputFrames.Add(writtenFrames) }
+	if writtenFrames > 0 {
+		a.epoch.diag.playbackOutputFrames.Add(writtenFrames)
+	}
+	a.epoch.diag.observePlaybackOutput(output, nonzeroFrames)
 	if !a.epoch.allowed() {
 		clear(output)
 		return
@@ -206,6 +214,7 @@ func (a *audio) queueDecoded(pcm []int16) {
 	if !a.epoch.allowed() {
 		return
 	}
+	a.epoch.diag.observeInboundPCM(pcm)
 	for len(pcm) > 0 {
 		n := min(len(pcm), samplesPerFrame*2)
 		block := playbackBlock{epoch: a.epoch.number, used: n / 2}
@@ -214,6 +223,7 @@ func (a *audio) queueDecoded(pcm []int16) {
 		select {
 		case a.playback <- block:
 			a.epoch.diag.playbackQueuedBlocks.Add(1)
+			a.epoch.diag.setPlaybackQueueDepth(len(a.playback))
 		default:
 			a.playbackDrops.Add(1)
 			a.epoch.diag.playbackQueueDrops.Add(1)
