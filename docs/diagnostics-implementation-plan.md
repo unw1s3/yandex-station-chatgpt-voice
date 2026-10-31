@@ -58,7 +58,7 @@ Implementation started on `feature/diagnostics-core`: a per-epoch atomic diagnos
 
 ### Stage 3 — call, signaling, WebRTC, and media telemetry
 
-Instrument existing HTTP signaling and PeerConnection/DataChannel callbacks. Record request duration/status class, setup duration, state transitions, RTP/media counters and available RTT/jitter/loss metrics. Read statistics from the existing peer only. Never log credentials, SDP, payloads, or conversation content.
+Implementation added on `feature/diagnostics-core`: signaling attempts, HTTP status, elapsed time and sanitized success/failure; DataChannel open/close and remote audio-track events; PeerConnection/ICE state transitions; periodic `GetStats()` snapshots from the existing peer with audio RTP packet/byte counts, packet loss, jitter, nominated candidate-pair state and RTT. The existing media path also counts outbound Opus frames/bytes, inbound RTP packets/bytes, decoded samples, queued playback blocks and samples actually handed to the ALSA callback. No new peer, signaling request, session, SDP logging, or payload inspection is introduced. Runtime hardware verification and test gates remain pending.
 
 ### Stage 4 — bounded event history and reports
 
