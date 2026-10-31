@@ -216,6 +216,7 @@ func (a *audio) queueDecoded(pcm []int16) {
 			a.epoch.diag.playbackQueuedBlocks.Add(1)
 		default:
 			a.playbackDrops.Add(1)
+			a.epoch.diag.playbackQueueDrops.Add(1)
 		}
 	}
 }
@@ -304,6 +305,7 @@ func (a *audio) receive(ctx context.Context, track *webrtc.TrackRemote) error {
 						if decoder.DecodePLC(pcm[:samplesPerFrame*2:samplesPerFrame*2]) != nil {
 							return errors.New("Opus loss concealment failed")
 						}
+						a.epoch.diag.decodedSamples.Add(samplesPerFrame)
 						a.queueDecoded(pcm[:samplesPerFrame*2])
 					}
 				} else if gap != 0 {
