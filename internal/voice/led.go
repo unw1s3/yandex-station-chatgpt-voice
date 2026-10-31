@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -44,7 +45,7 @@ func (l *stationLED) activate() error {
 			if err != nil {
 				return fmt.Errorf("read Station LED %s: %w", name, err)
 			}
-			value, err := strconv.Atoi(stringTrimSpace(data))
+			value, err := strconv.Atoi(strings.TrimSpace(string(data)))
 			if err != nil {
 				return fmt.Errorf("parse Station LED %s brightness: %w", name, err)
 			}
@@ -58,17 +59,6 @@ func (l *stationLED) activate() error {
 		return err
 	}
 	return nil
-}
-
-func stringTrimSpace(data []byte) string {
-	start, end := 0, len(data)
-	for start < end && (data[start] == ' ' || data[start] == '\n' || data[start] == '\r' || data[start] == '\t') {
-		start++
-	}
-	for end > start && (data[end-1] == ' ' || data[end-1] == '\n' || data[end-1] == '\r' || data[end-1] == '\t') {
-		end--
-	}
-	return string(data[start:end])
 }
 
 func (l *stationLED) set(color stationLEDColor) error {
@@ -100,7 +90,7 @@ func (l *stationLED) applyLocked(color stationLEDColor) error {
 			value int
 		}{{"red", red}, {"green", green}, {"blue", blue}} {
 			name := fmt.Sprintf("mini2:%s:ring%d", channel.name, zone)
-			if err := os.WriteFile(filepath.Join(l.root, name, "brightness"), []byte(strconv.Itoa(channel.value)), 0); err != nil {
+			if err := writeStationBrightness(filepath.Join(l.root, name, "brightness"), channel.value); err != nil {
 				return fmt.Errorf("write Station LED %s: %w", name, err)
 			}
 		}
@@ -120,11 +110,24 @@ func (l *stationLED) restoreLocked() error {
 	}
 	var result error
 	for name, value := range l.original {
-		if err := os.WriteFile(filepath.Join(l.root, name, "brightness"), []byte(strconv.Itoa(value)), 0); err != nil {
+		if err := writeStationBrightness(filepath.Join(l.root, name, "brightness"), value); err != nil {
 			result = fmt.Errorf("restore Station LED %s: %w", name, err)
 		}
 	}
 	l.active = false
 	l.original = nil
 	return result
+}
+
+func writeStationBrightness(path string, value int) error {
+	file, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	_, writeErr := file.Write([]byte(strconv.Itoa(value)))
+	closeErr := file.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	return closeErr
 }
