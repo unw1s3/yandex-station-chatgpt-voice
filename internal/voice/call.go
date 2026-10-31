@@ -92,7 +92,7 @@ func newPeer(ctx context.Context, settings webrtc.SettingEngine, servers []webrt
 	if err != nil {
 		return fail("cannot create voice control channel")
 	}
-	p.dc.OnOpen(sync.OnceFunc(func() { close(p.ready) }))
+	p.dc.OnOpen(sync.OnceFunc(func() { close(p.ready); p.report.Print("WebRTC DataChannel open.") }))
 	p.dc.OnMessage(func(message webrtc.DataChannelMessage) {
 		if !message.IsString {
 			p.fail(errors.New("unexpected binary voice control message"))
@@ -100,10 +100,11 @@ func newPeer(ctx context.Context, settings webrtc.SettingEngine, servers []webrt
 		}
 		p.handleMessage(message.Data)
 	})
-	p.dc.OnClose(func() { p.cancel(errRemoteClosed) })
+	p.dc.OnClose(func() { p.report.Print("WebRTC DataChannel closed."); p.cancel(errRemoteClosed) })
 	p.dc.OnError(p.channelError)
 	var disconnected atomic.Bool
 	p.pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		p.report.Printf("WebRTC peer connection state: %s; ICE=%s.", state, p.pc.ICEConnectionState())
 		switch state {
 		case webrtc.PeerConnectionStateDisconnected:
 			disconnected.Store(true)
@@ -126,6 +127,7 @@ func newPeer(ctx context.Context, settings webrtc.SettingEngine, servers []webrt
 			p.cancel(errors.New("unexpected additional remote media track"))
 			return
 		}
+		p.report.Printf("WebRTC remote audio track received; codec=%s clock=%d channels=%d.", track.Codec().MimeType, track.Codec().ClockRate, track.Codec().Channels)
 		select {
 		case p.tracks <- track:
 		case <-p.ctx.Done():
@@ -145,6 +147,39 @@ func newPeer(ctx context.Context, settings webrtc.SettingEngine, servers []webrt
 		}
 	})
 	return p, nil
+}
+
+func (p *peer) statsSnapshot() string {
+	var outPackets, inPackets uint64
+	var outBytes, inBytes uint64
+	var packetsLost int64
+	var jitterMS, rttMS float64
+	var nominatedState string
+	for _, stat := range p.pc.GetStats() {
+		switch value := stat.(type) {
+		case webrtc.OutboundRTPStreamStats:
+			if value.Kind == "audio" {
+				outPackets += uint64(value.PacketsSent)
+				outBytes += value.BytesSent
+			}
+		case webrtc.InboundRTPStreamStats:
+			if value.Kind == "audio" {
+				inPackets += uint64(value.PacketsReceived)
+				inBytes += value.BytesReceived
+				packetsLost += int64(value.PacketsLost)
+				jitterMS = value.Jitter * 1000
+			}
+		case webrtc.ICECandidatePairStats:
+			if value.Nominated {
+				nominatedState = string(value.State)
+				rttMS = value.CurrentRoundTripTime * 1000
+			}
+		}
+	}
+	return fmt.Sprintf("WebRTC stats: peer=%s ice=%s datachannel=%s audio_out_packets=%d audio_out_bytes=%d audio_in_packets=%d audio_in_bytes=%d audio_packets_lost=%d jitter_ms=%.2f nominated_pair=%s rtt_ms=%.2f",
+		p.pc.ConnectionState(), p.pc.ICEConnectionState(), p.dc.ReadyState(),
+		outPackets, outBytes, inPackets, inBytes, packetsLost, jitterMS,
+		nominatedState, rttMS)
 }
 
 func closedTransport(err error) bool {
@@ -356,6 +391,16 @@ func runCall(e *stationEpoch, auth credential, capture *stationCapture, settings
 			result = errors.Join(result, cleanupErr)
 		}
 	}()
+	workers.Go(func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-p.ctx.Done(): return
+			case <-ticker.C: e.report.Print(p.statsSnapshot())
+			}
+		}
+	})
 	stopPeerCancel := context.AfterFunc(p.ctx, func() { e.revoke(context.Cause(p.ctx)) })
 	defer stopPeerCancel()
 	setupCtx, finishSetup := context.WithTimeout(ctx, setupTimeout)
@@ -376,10 +421,16 @@ func runCall(e *stationEpoch, auth credential, capture *stationCapture, settings
 	}
 	client := signalingClient()
 	defer client.CloseIdleConnections()
+	signalingStarted := time.Now()
 	answer, err := exchangeOffer(setupCtx, client, auth, offer, session)
+	signalingDuration := time.Since(signalingStarted)
+	e.diag.signalingDurationMs.Store(signalingDuration.Milliseconds())
+	e.diag.signalingSuccess.Store(err == nil)
 	if err != nil {
+		e.report.Printf("ChatGPT signaling failed after %s: %v", signalingDuration.Round(time.Millisecond), err)
 		return err
 	}
+	e.report.Printf("ChatGPT signaling accepted in %s.", signalingDuration.Round(time.Millisecond))
 	if !e.allowed() {
 		return context.Cause(ctx)
 	}
@@ -421,6 +472,7 @@ func runCall(e *stationEpoch, auth credential, capture *stationCapture, settings
 	}
 	finishSetup()
 	e.report.Print("Voice media ready.")
+	e.report.Print(p.statsSnapshot())
 	workers.Go(func() {
 		if err := e.output.send(ctx, p.mic, capture.input); err != nil {
 			e.revoke(err)
