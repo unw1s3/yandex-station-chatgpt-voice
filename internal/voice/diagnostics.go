@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sync/atomic"
+	"sync"
 	"time"
 )
 
@@ -41,6 +42,23 @@ type runtimeDiagnostics struct {
 	lastVoiceUnixNano  atomic.Int64
 	lastRMSBits        atomic.Uint64
 	lastPeak           atomic.Uint32
+}
+
+func (d *runtimeDiagnostics) observeRealtimeEvent(ev event) {
+	if ev.kind == "" { return }
+	d.realtimeEvents.Add(1)
+	switch ev.kind {
+	case "response.created": d.responseCreated.Add(1)
+	case "response.done": d.responseDone.Add(1)
+	case "response.audio.delta": d.responseAudioDeltas.Add(1)
+	case "conversation.item.input_audio_transcription.completed": d.transcriptionDone.Add(1)
+	case "error": d.serverErrors.Add(1)
+	}
+	d.lastEventMu.Lock()
+	d.lastEvent = ev.kind
+	if ev.status != "" { d.lastResponseStatus = ev.status }
+	if ev.failure != "" { d.lastServerFailure = ev.failure }
+	d.lastEventMu.Unlock()
 }
 
 func (d *runtimeDiagnostics) observePCM(pcm []byte) {
@@ -88,8 +106,11 @@ func (d *runtimeDiagnostics) snapshot() string {
 	silenceSince := lastVoice
 	if silenceSince == 0 { silenceSince = d.firstPCMUnixNano.Load() }
 	if silenceSince != 0 { silence = now.Sub(time.Unix(0, silenceSince)).Round(time.Millisecond).String() }
+	d.lastEventMu.Lock()
+	lastEvent, responseStatus, serverFailure := d.lastEvent, d.lastResponseStatus, d.lastServerFailure
+	d.lastEventMu.Unlock()
 	return fmt.Sprintf(
-		"Runtime audio: chunks=%d bytes=%d samples=%d detector_frames=%d streaming_frames=%d last_pcm_age=%s rms=%.0f peak=%d silence=%s silence_floor=%d spotter_init_errors=%d spotter_feed_errors=%d wake_detections=%d capture_stalls=%d capture_read_errors=%d queue_overflows=%d opus_out_packets=%d opus_out_bytes=%d rtp_in_packets=%d rtp_in_bytes=%d decoded_samples=%d playback_blocks=%d playback_queue_drops=%d playback_output_frames=%d setup_ms=%d signaling_attempts=%d signaling_http_status=%d signaling_ms=%d signaling_ok=%t",
+		"Runtime audio: chunks=%d bytes=%d samples=%d detector_frames=%d streaming_frames=%d last_pcm_age=%s rms=%.0f peak=%d silence=%s silence_floor=%d spotter_init_errors=%d spotter_feed_errors=%d wake_detections=%d capture_stalls=%d capture_read_errors=%d queue_overflows=%d opus_out_packets=%d opus_out_bytes=%d rtp_in_packets=%d rtp_in_bytes=%d decoded_samples=%d playback_blocks=%d playback_queue_drops=%d playback_output_frames=%d setup_ms=%d signaling_attempts=%d signaling_http_status=%d signaling_ms=%d signaling_ok=%t realtime_events=%d response_created=%d response_done=%d response_audio_deltas=%d transcription_done=%d server_errors=%d last_event=%s response_status=%s server_failure=%s",
 		d.pcmChunks.Load(), d.pcmBytes.Load(), d.pcmSamples.Load(),
 		d.detectorFrames.Load(), d.streamingFrames.Load(), pcmAge, rms,
 		d.lastPeak.Load(), silence, diagnosticSilenceFloor, d.spotterInitErrors.Load(),
@@ -102,5 +123,8 @@ func (d *runtimeDiagnostics) snapshot() string {
 		d.playbackOutputFrames.Load(), d.setupDurationMs.Load(),
 		d.signalingAttempts.Load(), d.signalingHTTPStatus.Load(),
 		d.signalingDurationMs.Load(), d.signalingSuccess.Load(),
+		d.realtimeEvents.Load(), d.responseCreated.Load(), d.responseDone.Load(),
+		d.responseAudioDeltas.Load(), d.transcriptionDone.Load(), d.serverErrors.Load(),
+		lastEvent, responseStatus, serverFailure,
 	)
 }
