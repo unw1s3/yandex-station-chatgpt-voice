@@ -17,7 +17,7 @@ start restart: export BACKEND_MODEL := $(BACKEND_MODEL)
 start restart: export BACKEND_THINKING_EFFORT := $(BACKEND_THINKING_EFFORT)
 auth: export SESSION_JSON := $(SESSION_JSON)
 
-.PHONY: help setup fmt test vet check build clean connect status diagnose diagnose-full report install start stop restart logs shell auth
+.PHONY: help setup fmt test vet check build clean connect status diagnose diagnose-full report install start stop restart logs debug-logs shell auth
 
 help:
 	@printf '%s\n' \
@@ -37,7 +37,8 @@ help:
 	  'start    Start the installed client' \
 	  'stop     Stop only the verified client process' \
 	  'restart  Stop and start the installed client' \
-	  'logs     Follow /tmp/yandex-station-chatgpt-voice.log' \
+	  'logs       Follow important runtime events' \
+	  'debug-logs Follow detailed WebRTC, protocol and audio diagnostics' \
 	  'shell    Open the selected Station shell' \
 	  'auth     Import with a hidden prompt, or SESSION_JSON=/path/to/file' \
 	  '' \
