@@ -376,6 +376,7 @@ func runCall(e *stationEpoch, auth credential, capture *stationCapture, settings
 		return context.Cause(e.ctx)
 	}
 	ctx := e.ctx
+	setupStarted := time.Now()
 	var workers sync.WaitGroup
 	p, err := newPeer(ctx, webrtc.SettingEngine{}, []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302", "stun:stun4.l.google.com:19302"}}}, e.report)
 	if err != nil {
@@ -477,7 +478,8 @@ func runCall(e *stationEpoch, auth credential, capture *stationCapture, settings
 		return err
 	}
 	finishSetup()
-	e.report.Print("Voice media ready.")
+	e.diag.setupDurationMs.Store(time.Since(setupStarted).Milliseconds())
+	e.report.Printf("Voice media ready; setup=%s.", time.Since(setupStarted).Round(time.Millisecond))
 	e.report.Print(p.statsSnapshot())
 	workers.Go(func() {
 		if err := e.output.send(ctx, p.mic, capture.input); err != nil {
