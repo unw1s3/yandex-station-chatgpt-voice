@@ -33,6 +33,16 @@ type runtimeDiagnostics struct {
 	playbackQueueDrops atomic.Uint64
 	setupDurationMs atomic.Int64
 	playbackOutputFrames atomic.Uint64
+	inboundPCMBlocks atomic.Uint64
+	inboundPCMSilentBlocks atomic.Uint64
+	lastInboundPCMRMSBits atomic.Uint64
+	lastInboundPCMPeak atomic.Uint32
+	playbackQueueDepth atomic.Uint32
+	playbackQueueMaxDepth atomic.Uint32
+	playbackSilentCallbacks atomic.Uint64
+	lastPlaybackRMSBits atomic.Uint64
+	lastPlaybackPeak atomic.Uint32
+	playbackNonzeroFrames atomic.Uint64
 	signalingAttempts atomic.Uint64
 	signalingHTTPStatus atomic.Int32
 	signalingDurationMs atomic.Int64
@@ -105,6 +115,72 @@ func (d *runtimeDiagnostics) observePCM(pcm []byte) {
 	}
 }
 
+func (d *runtimeDiagnostics) observeInboundPCM(pcm []int16) {
+	if len(pcm) == 0 {
+		return
+	}
+	var sumSquares uint64
+	var peak uint32
+	for _, sample := range pcm {
+		value := int32(sample)
+		magnitude := uint32(value)
+		if value < 0 {
+			magnitude = uint32(-value)
+		}
+		if magnitude > peak {
+			peak = magnitude
+		}
+		sumSquares += uint64(value * value)
+	}
+	rms := math.Sqrt(float64(sumSquares) / float64(len(pcm)))
+	d.inboundPCMBlocks.Add(1)
+	if rms < diagnosticSilenceFloor {
+		d.inboundPCMSilentBlocks.Add(1)
+	}
+	d.lastInboundPCMRMSBits.Store(math.Float64bits(rms))
+	d.lastInboundPCMPeak.Store(peak)
+}
+
+func (d *runtimeDiagnostics) setPlaybackQueueDepth(depth int) {
+	if depth < 0 {
+		depth = 0
+	}
+	value := uint32(depth)
+	d.playbackQueueDepth.Store(value)
+	for max := d.playbackQueueMaxDepth.Load(); value > max; max = d.playbackQueueMaxDepth.Load() {
+		if d.playbackQueueMaxDepth.CompareAndSwap(max, value) {
+			break
+		}
+	}
+}
+
+func (d *runtimeDiagnostics) observePlaybackOutput(output []byte, nonzeroFrames uint64) {
+	if len(output) < 2 || len(output)%2 != 0 {
+		return
+	}
+	var sumSquares uint64
+	var peak uint32
+	samples := len(output) / 2
+	for i := 0; i < len(output); i += 2 {
+		value := int16(uint16(output[i]) | uint16(output[i+1])<<8)
+		magnitude := uint32(value)
+		if value < 0 {
+			magnitude = uint32(-int32(value))
+		}
+		if magnitude > peak {
+			peak = magnitude
+		}
+		sumSquares += uint64(int64(value) * int64(value))
+	}
+	rms := math.Sqrt(float64(sumSquares) / float64(samples))
+	d.lastPlaybackRMSBits.Store(math.Float64bits(rms))
+	d.lastPlaybackPeak.Store(peak)
+	d.playbackNonzeroFrames.Add(nonzeroFrames)
+	if peak < diagnosticSilenceFloor {
+		d.playbackSilentCallbacks.Add(1)
+	}
+}
+
 func (d *runtimeDiagnostics) snapshot() string {
 	now := time.Now()
 	lastPCM := d.lastPCMUnixNano.Load()
@@ -122,7 +198,7 @@ func (d *runtimeDiagnostics) snapshot() string {
 	lastEvent, responseStatus, serverFailure := d.lastEvent, d.lastResponseStatus, d.lastServerFailure
 	d.lastEventMu.Unlock()
 	return fmt.Sprintf(
-		"Runtime audio: chunks=%d bytes=%d samples=%d detector_frames=%d streaming_frames=%d last_pcm_age=%s rms=%.0f peak=%d silence=%s silence_floor=%d spotter_init_errors=%d spotter_feed_errors=%d wake_detections=%d capture_stalls=%d capture_read_errors=%d queue_overflows=%d opus_out_packets=%d opus_out_bytes=%d rtp_in_packets=%d rtp_in_bytes=%d decoded_samples=%d playback_blocks=%d playback_queue_drops=%d playback_output_frames=%d setup_ms=%d signaling_attempts=%d signaling_http_status=%d signaling_ms=%d signaling_ok=%t realtime_events=%d response_created=%d response_done=%d response_audio_deltas=%d transcription_done=%d server_errors=%d last_event=%s response_status=%s server_failure=%s",
+		"Runtime audio: chunks=%d bytes=%d samples=%d detector_frames=%d streaming_frames=%d last_pcm_age=%s rms=%.0f peak=%d silence=%s silence_floor=%d spotter_init_errors=%d spotter_feed_errors=%d wake_detections=%d capture_stalls=%d capture_read_errors=%d queue_overflows=%d opus_out_packets=%d opus_out_bytes=%d rtp_in_packets=%d rtp_in_bytes=%d decoded_samples=%d inbound_pcm_blocks=%d inbound_pcm_silent_blocks=%d inbound_pcm_rms=%.0f inbound_pcm_peak=%d playback_blocks=%d playback_queue_depth=%d playback_queue_max=%d playback_queue_drops=%d playback_output_frames=%d playback_output_rms=%.0f playback_output_peak=%d playback_silent_callbacks=%d playback_nonzero_frames=%d setup_ms=%d signaling_attempts=%d signaling_http_status=%d signaling_ms=%d signaling_ok=%t realtime_events=%d response_created=%d response_done=%d response_audio_deltas=%d transcription_done=%d server_errors=%d last_event=%s response_status=%s server_failure=%s",
 		d.pcmChunks.Load(), d.pcmBytes.Load(), d.pcmSamples.Load(),
 		d.detectorFrames.Load(), d.streamingFrames.Load(), pcmAge, rms,
 		d.lastPeak.Load(), silence, diagnosticSilenceFloor, d.spotterInitErrors.Load(),
@@ -131,8 +207,12 @@ func (d *runtimeDiagnostics) snapshot() string {
 		d.captureQueueDrops.Load(), d.outboundOpusPackets.Load(),
 		d.outboundOpusBytes.Load(), d.inboundRTPPackets.Load(),
 		d.inboundRTPBytes.Load(), d.decodedSamples.Load(),
-		d.playbackQueuedBlocks.Load(), d.playbackQueueDrops.Load(),
-		d.playbackOutputFrames.Load(), d.setupDurationMs.Load(),
+		d.playbackQueuedBlocks.Load(), d.inboundPCMBlocks.Load(), d.inboundPCMSilentBlocks.Load(),
+		math.Float64frombits(d.lastInboundPCMRMSBits.Load()), d.lastInboundPCMPeak.Load(),
+		d.playbackQueueDepth.Load(), d.playbackQueueMaxDepth.Load(), d.playbackQueueDrops.Load(),
+		d.playbackOutputFrames.Load(), math.Float64frombits(d.lastPlaybackRMSBits.Load()),
+		d.lastPlaybackPeak.Load(), d.playbackSilentCallbacks.Load(), d.playbackNonzeroFrames.Load(),
+		d.setupDurationMs.Load(),
 		d.signalingAttempts.Load(), d.signalingHTTPStatus.Load(),
 		d.signalingDurationMs.Load(), d.signalingSuccess.Load(),
 		d.realtimeEvents.Load(), d.responseCreated.Load(), d.responseDone.Load(),
