@@ -17,7 +17,7 @@ start restart: export BACKEND_MODEL := $(BACKEND_MODEL)
 start restart: export BACKEND_THINKING_EFFORT := $(BACKEND_THINKING_EFFORT)
 auth: export SESSION_JSON := $(SESSION_JSON)
 
-.PHONY: help setup fmt test vet check build clean connect status install start stop restart logs shell auth
+.PHONY: help setup fmt test vet check build clean connect status diagnose diagnose-full report install start stop restart logs shell auth
 
 help:
 	@printf '%s\n' \
@@ -74,8 +74,16 @@ build:
 clean:
 	rm -rf build
 
-connect status start stop restart logs shell auth:
+connect status diagnose start stop restart logs shell auth:
 	$(PYTHON) tools/station.py --adb "$(ADB)" --ip "$(STATION_IP)" $@
+
+diagnose-full:
+	@echo 'diagnose-full is not implemented yet; run make diagnose.' >&2
+	@exit 2
+
+report: diagnose
+	@$(PYTHON) tools/station.py --adb "$(ADB)" --ip "$(STATION_IP)" diagnose > diagnostics-report.txt
+	@echo 'Sanitized report written to diagnostics-report.txt'
 
 install: build
 	$(PYTHON) tools/station.py --adb "$(ADB)" --ip "$(STATION_IP)" install
