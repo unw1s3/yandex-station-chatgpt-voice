@@ -47,3 +47,25 @@ func TestRotatingLogKeepsTwoBackupsAndPrivateMode(t *testing.T) {
 		t.Errorf("unexpected third backup: %v", err)
 	}
 }
+
+func TestOpenRotatingLogRejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	if err := os.WriteFile(target, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "debug.log")
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openRotatingLog(path, 1024); err == nil {
+		t.Fatal("expected symlink path to be rejected")
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "keep" {
+		t.Fatalf("symlink target changed: %q", got)
+	}
+}
