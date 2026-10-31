@@ -99,7 +99,7 @@ func decodeEvent(data []byte) (event, error) {
 	if len(payload) == 0 {
 		payload = data
 	}
-	ev := event{kind: wire.Type}
+	ev := event{}
 	if wire.Type == "response.created" || wire.Type == "response.done" {
 		var direct struct { Status string `json:"status"` }
 		var wrapped struct { Response struct { Status string `json:"status"` } `json:"response"` }
@@ -119,6 +119,7 @@ func decodeEvent(data []byte) (event, error) {
 		"response.audio.delta", "response.audio.done", "response.audio_transcript.delta",
 		"response.audio_transcript.done", "response.text.delta", "response.text.done",
 		"response.done", "rate_limits.updated":
+		ev.kind = wire.Type
 		return ev, nil
 	case "usage_update":
 		var p struct {
@@ -146,10 +147,12 @@ func decodeEvent(data []byte) (event, error) {
 		}
 		exceeded := len(p.Rate.Exceed) > 0 && string(p.Rate.Exceed) != "null" && string(p.Rate.Exceed) != "false" && string(p.Rate.Exceed) != `""`
 		if p.Instructions.HangUp {
+			ev.kind = wire.Type
 			ev.ended = true
 			return ev, nil
 		}
 		if exceeded || p.Rate.Exceeded || p.Rate.Reached || (remaining != nil && *remaining <= 0) {
+			ev.kind = wire.Type
 			ev.failure = "usage_limit"
 			ev.err = errors.New("ChatGPT ended this call because of its usage limit")
 			return ev, nil
@@ -180,7 +183,8 @@ func decodeEvent(data []byte) (event, error) {
 		default:
 			ev.failure = "server_error"
 		}
-		ev.err = errors.New("ChatGPT reported a voice session error (" + ev.failure + ")")
+		ev.kind = wire.Type
+		ev.err = errors.New("ChatGPT reported a voice session error")
 		return ev, nil
 	}
 	return ev, nil
