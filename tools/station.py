@@ -564,6 +564,8 @@ def main():
             "restart",
             "logs",
             "debug-logs",
+            "follow-logs",
+            "follow-debug-logs",
             "shell",
             "auth",
             "diagnose",
@@ -593,13 +595,17 @@ def main():
     if args.action == "diagnose":
         diagnose(args)
         return
-    if args.action in ("logs", "debug-logs", "shell"):
+    if args.action in ("logs", "debug-logs", "follow-logs", "follow-debug-logs", "shell"):
         adb_shell(args, COMMON + "true\n")
         command = [args.adb, "-s", args.serial, "shell"]
-        if args.action == "logs":
-            command.append(f"tail -n 100 -f {shlex.quote(LOG)}")
-        elif args.action == "debug-logs":
-            command.append(f"tail -n 100 -f {shlex.quote(DEBUG_LOG)}")
+        if args.action in ("logs", "follow-logs"):
+            command.extend(["tail", "-n", "60", LOG])
+            if args.action == "follow-logs":
+                command.append("-f")
+        elif args.action in ("debug-logs", "follow-debug-logs"):
+            command.extend(["tail", "-n", "100", DEBUG_LOG])
+            if args.action == "follow-debug-logs":
+                command.append("-f")
         raise SystemExit(subprocess.call(command))
     data = arm_binary(BINARY) if args.action == "install" else None
     session = session_input(args.session_json) if args.action == "auth" else None
