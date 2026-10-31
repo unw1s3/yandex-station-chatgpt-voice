@@ -54,7 +54,7 @@ Add a report mode that can save the same sanitized report locally. Preserve the 
 
 ### Stage 2 — runtime audio and wake-word telemetry
 
-Introduce a shared diagnostics state owned by the running application. Instrument the existing `readCapture`/capture queue and wake-word feed path without creating another IPC reader. Record PCM frame/byte counts, last-frame time, RMS/peak, silence duration, capture stalls, queue overflows, spotter initialization/feed errors, and wake-word detections.
+Implementation started on `feature/diagnostics-core`: a per-epoch atomic diagnostics state observes the existing `pushPCM` path and native spotter feed. It records PCM chunks/bytes/samples, last PCM age, RMS/peak, elapsed silence, detector/streaming frame counts, capture stalls/read errors/queue overflows, spotter initialization/feed errors, and wake detections. A context-bound monitor emits a sanitized snapshot every five seconds while an epoch is active. PCM is analyzed in place and never retained; no second IPC reader is created. Host tests cover PCM metrics and silence handling. Hardware verification and the full test gate remain pending.
 
 ### Stage 3 — call, signaling, WebRTC, and media telemetry
 
