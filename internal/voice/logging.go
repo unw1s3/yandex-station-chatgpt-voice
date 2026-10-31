@@ -35,6 +35,11 @@ func openRotatingLog(path string, max int64) (*rotatingLog, error) {
 		_ = f.Close()
 		return nil, fmt.Errorf("stat debug log: %w", err)
 	}
+	pathInfo, err := os.Lstat(path)
+	if err != nil || !pathInfo.Mode().IsRegular() || !os.SameFile(info, pathInfo) {
+		_ = f.Close()
+		return nil, errors.New("debug log path must be a regular file, not a symlink")
+	}
 	if err := f.Chmod(0600); err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("protect debug log: %w", err)
