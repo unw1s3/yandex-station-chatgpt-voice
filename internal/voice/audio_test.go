@@ -19,12 +19,23 @@ import (
 
 
 func TestAmplifyCapturePCM(t *testing.T) {
-	pcm := []int16{100, -100, 1000, -1000, 2000, -2000, 32767, -32768}
+	pcm := []int16{100, -100, 1000, -1000, 2000, -2000}
 	amplifyCapturePCM(pcm, 32)
-	want := []int16{3200, -3200, 32000, -32000, 32767, -32768, 32767, -32768}
+	want := []int16{3200, -3200, 32000, -32000, 32767, -32768}
 	for i := range want {
 		if pcm[i] != want[i] {
 			t.Fatalf("amplified sample %d = %d, want %d", i, pcm[i], want[i])
+		}
+	}
+}
+
+func TestAmplifyCapturePCMRespectsPeakHeadroom(t *testing.T) {
+	pcm := []int16{12000, -12000, 6000, -6000}
+	amplifyCapturePCM(pcm, 32)
+	want := []int16{24000, -24000, 12000, -12000}
+	for i := range want {
+		if pcm[i] != want[i] {
+			t.Fatalf("headroom-limited sample %d = %d, want %d", i, pcm[i], want[i])
 		}
 	}
 }
