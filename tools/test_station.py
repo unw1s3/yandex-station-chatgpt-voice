@@ -363,6 +363,7 @@ class AuthInputTest(unittest.TestCase):
             "stop",
             "restart",
             "logs",
+            "debug-logs",
             "shell",
         ):
             with (
