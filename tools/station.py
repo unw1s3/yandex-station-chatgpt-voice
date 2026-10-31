@@ -534,7 +534,8 @@ def diagnose(args):
     print("[SKIP] PCM capture / wake-word detections — no competing IPC reader is opened")
     print("[SKIP] ChatGPT authentication / signaling / WebRTC — no session is created")
     print("[SKIP] Speaker playback — no test audio is played")
-    print("[INFO] Session file: existence only; credentials were not read")
+    session_exists = values.get("SESSION_FILE") == "1"
+    print("[INFO] Session file: " + ("present" if session_exists else "not present") + "; contents were not read")
     print("[INFO] IPC checks inspect procfs only; no connection was opened")
 
 
