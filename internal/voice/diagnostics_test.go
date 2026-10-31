@@ -32,3 +32,40 @@ func TestRuntimeDiagnosticsSilenceAndInvalidPCM(t *testing.T) {
 	time.Sleep(time.Millisecond)
 	if !strings.Contains(d.snapshot(), "silence=") { t.Fatal("snapshot missing silence duration") }
 }
+
+func TestInboundPCMAndPlaybackDiagnostics(t *testing.T) {
+	d := &runtimeDiagnostics{}
+	d.observeInboundPCM([]int16{1000, -1000, 500, -500})
+	d.observeInboundPCM(make([]int16, 4))
+	if got := d.inboundPCMBlocks.Load(); got != 2 {
+		t.Fatalf("inbound PCM blocks = %d, want 2", got)
+	}
+	if got := d.inboundPCMSilentBlocks.Load(); got != 1 {
+		t.Fatalf("silent inbound blocks = %d, want 1", got)
+	}
+	if got := d.lastInboundPCMPeak.Load(); got != 0 {
+		t.Fatalf("last inbound peak = %d, want 0 for silence", got)
+	}
+	d.setPlaybackQueueDepth(3)
+	d.setPlaybackQueueDepth(7)
+	d.setPlaybackQueueDepth(2)
+	if got := d.playbackQueueDepth.Load(); got != 2 {
+		t.Fatalf("queue depth = %d, want 2", got)
+	}
+	if got := d.playbackQueueMaxDepth.Load(); got != 7 {
+		t.Fatalf("max queue depth = %d, want 7", got)
+	}
+	output := make([]byte, 16)
+	binary.LittleEndian.PutUint16(output[0:], uint16(int16(2000)))
+	binary.LittleEndian.PutUint16(output[2:], uint16(int16(-2000)))
+	d.observePlaybackOutput(output, 1)
+	if got := d.lastPlaybackPeak.Load(); got != 2000 {
+		t.Fatalf("playback peak = %d, want 2000", got)
+	}
+	if got := d.playbackNonzeroFrames.Load(); got != 1 {
+		t.Fatalf("nonzero playback frames = %d, want 1", got)
+	}
+	if got := d.playbackSilentCallbacks.Load(); got != 0 {
+		t.Fatalf("silent playback callbacks = %d, want 0", got)
+	}
+}
