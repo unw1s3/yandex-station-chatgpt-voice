@@ -410,6 +410,9 @@ func runCall(e *stationEpoch, auth credential, capture *stationCapture, settings
 		cleanupErr := shutdown()
 		stopShutdown()
 		workers.Wait()
+		if e.diag != nil {
+			e.debug.Printf("%s", e.diag.snapshot())
+		}
 		result = p.outcome(result)
 		if cleanupErr != nil {
 			result = errors.Join(result, cleanupErr)
