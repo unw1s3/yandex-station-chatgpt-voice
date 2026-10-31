@@ -26,6 +26,7 @@ import (
 )
 
 const captureSamples = 320
+const captureGain = 32
 const samplesPerFrame = 960
 const frameDuration = 20 * time.Millisecond
 const reorderDelay = 3 * frameDuration
@@ -162,6 +163,21 @@ func (a *audio) callback(output, _ []byte, frames uint32) {
 	}
 }
 
+func amplifyCapturePCM(pcm []int16, gain int) {
+	if gain <= 1 {
+		return
+	}
+	for i, sample := range pcm {
+		value := int32(sample) * int32(gain)
+		if value > 32767 {
+			value = 32767
+		} else if value < -32768 {
+			value = -32768
+		}
+		pcm[i] = int16(value)
+	}
+}
+
 func (a *audio) send(ctx context.Context, track *webrtc.TrackLocalStaticSample, input <-chan captureFrame) error {
 	encoder, err := opus.NewEncoder(16000, 1, opus.AppVoIP)
 	if err != nil {
@@ -192,6 +208,9 @@ func (a *audio) send(ctx context.Context, track *webrtc.TrackLocalStaticSample, 
 		}
 		expected = frame.sequence + 1
 		haveFrame = true
+		// The Station's processed vqe_0 stream is unusually quiet; boost only
+		// the outgoing ChatGPT microphone path, leaving wake-word detection untouched.
+		amplifyCapturePCM(frame.pcm[:], captureGain)
 		a.epoch.diag.observeOutboundPCM(frame.pcm[:])
 		n, err := encoder.Encode(frame.pcm[:], packet[:])
 		if err != nil {
