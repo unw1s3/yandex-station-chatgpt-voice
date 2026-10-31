@@ -43,15 +43,17 @@ type peer struct {
 	report    *log.Logger
 	failureMu sync.Mutex
 	failure   error
+	diag      *runtimeDiagnostics
 }
 
-func newPeer(ctx context.Context, settings webrtc.SettingEngine, servers []webrtc.ICEServer, report *log.Logger) (*peer, error) {
+func newPeer(ctx context.Context, settings webrtc.SettingEngine, servers []webrtc.ICEServer, report *log.Logger, diagnostics ...*runtimeDiagnostics) (*peer, error) {
 	settings.SetSCTPMaxMessageSize(maxMessageBytes)
 	settings.SetSCTPMaxReceiveBufferSize(maxSCTPReceiveBufferBytes)
 	settings.LoggerFactory = &logging.DefaultLoggerFactory{Writer: io.Discard, DefaultLogLevel: logging.LogLevelDisabled}
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(settings))
 	ctx, cancel := context.WithCancelCause(ctx)
 	p := &peer{report: report, ctx: ctx, cancel: cancel, ready: make(chan struct{}), tracks: make(chan *webrtc.TrackRemote, 1)}
+	if len(diagnostics) > 0 { p.diag = diagnostics[0] }
 	var err error
 	p.pc, err = api.NewPeerConnection(webrtc.Configuration{ICEServers: servers, BundlePolicy: webrtc.BundlePolicyMaxBundle})
 	if err != nil {
@@ -222,15 +224,20 @@ func (p *peer) outcome(result error) error {
 }
 
 func (p *peer) handleMessage(data []byte) {
-	if p.ctx.Err() != nil {
-		return
-	}
+	if p.ctx.Err() != nil { return }
 	ev, err := decodeEvent(data)
-	if err != nil {
-		p.fail(err)
-	} else if ev.err != nil {
+	if err != nil { p.fail(err); return }
+	if p.diag != nil { p.diag.observeRealtimeEvent(ev) }
+	if ev.kind != "" {
+		if ev.status != "" { p.report.Printf("ChatGPT event: %s status=%s.", ev.kind, ev.status)
+		} else if ev.failure != "" { p.report.Printf("ChatGPT event: %s category=%s.", ev.kind, ev.failure)
+		} else { p.report.Printf("ChatGPT event: %s.", ev.kind) }
+	}
+	if ev.err != nil {
+		p.report.Printf("ChatGPT response error: %v.", ev.err)
 		p.fail(ev.err)
 	} else if ev.ended {
+		p.report.Print("ChatGPT ended the voice session normally.")
 		p.cancel(errProtocolHangup)
 	}
 }
@@ -331,9 +338,13 @@ func exchangeOfferObserved(ctx context.Context, client *http.Client, auth creden
 	if diag != nil { diag.signalingHTTPStatus.Store(int32(response.StatusCode)) }
 	switch response.StatusCode {
 	case http.StatusUnauthorized:
-		return "", errors.New("ChatGPT session expired or rejected (401); run yandex-station-chatgpt-voice auth import with a fresh own web access token")
+		return "", errors.New("ChatGPT authentication rejected (HTTP 401); refresh the imported web session")
 	case http.StatusForbidden:
-		return "", errors.New("ChatGPT rejected voice access (403); account entitlement or edge restrictions may prevent this native client")
+		return "", errors.New("ChatGPT voice access forbidden (HTTP 403); account entitlement or access policy")
+	case http.StatusTooManyRequests:
+		return "", errors.New("ChatGPT signaling rate limit exceeded (HTTP 429)")
+	case http.StatusPaymentRequired:
+		return "", errors.New("ChatGPT signaling quota or billing limit (HTTP 402)")
 	case http.StatusOK, http.StatusCreated:
 	default:
 		return "", fmt.Errorf("ChatGPT voice signaling returned HTTP %d", response.StatusCode)
@@ -378,7 +389,7 @@ func runCall(e *stationEpoch, auth credential, capture *stationCapture, settings
 	ctx := e.ctx
 	setupStarted := time.Now()
 	var workers sync.WaitGroup
-	p, err := newPeer(ctx, webrtc.SettingEngine{}, []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302", "stun:stun4.l.google.com:19302"}}}, e.report)
+	p, err := newPeer(ctx, webrtc.SettingEngine{}, []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302", "stun:stun4.l.google.com:19302"}}}, e.report, e.diag)
 	if err != nil {
 		return err
 	}
