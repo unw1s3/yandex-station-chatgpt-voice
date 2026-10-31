@@ -29,6 +29,8 @@ type runtimeDiagnostics struct {
 	inboundRTPBytes atomic.Uint64
 	decodedSamples atomic.Uint64
 	playbackQueuedBlocks atomic.Uint64
+	playbackQueueDrops atomic.Uint64
+	setupDurationMs atomic.Int64
 	playbackOutputFrames atomic.Uint64
 	signalingAttempts atomic.Uint64
 	signalingHTTPStatus atomic.Int32
@@ -87,16 +89,17 @@ func (d *runtimeDiagnostics) snapshot() string {
 	if silenceSince == 0 { silenceSince = d.firstPCMUnixNano.Load() }
 	if silenceSince != 0 { silence = now.Sub(time.Unix(0, silenceSince)).Round(time.Millisecond).String() }
 	return fmt.Sprintf(
-		"Runtime audio: chunks=%d bytes=%d samples=%d detector_frames=%d streaming_frames=%d last_pcm_age=%s rms=%.0f peak=%d silence=%s spotter_init_errors=%d spotter_feed_errors=%d wake_detections=%d capture_stalls=%d capture_read_errors=%d queue_overflows=%d opus_out_packets=%d opus_out_bytes=%d rtp_in_packets=%d rtp_in_bytes=%d decoded_samples=%d playback_blocks=%d playback_output_frames=%d signaling_attempts=%d signaling_http_status=%d signaling_ms=%d signaling_ok=%t",
+		"Runtime audio: chunks=%d bytes=%d samples=%d detector_frames=%d streaming_frames=%d last_pcm_age=%s rms=%.0f peak=%d silence=%s silence_floor=%d spotter_init_errors=%d spotter_feed_errors=%d wake_detections=%d capture_stalls=%d capture_read_errors=%d queue_overflows=%d opus_out_packets=%d opus_out_bytes=%d rtp_in_packets=%d rtp_in_bytes=%d decoded_samples=%d playback_blocks=%d playback_queue_drops=%d playback_output_frames=%d setup_ms=%d signaling_attempts=%d signaling_http_status=%d signaling_ms=%d signaling_ok=%t",
 		d.pcmChunks.Load(), d.pcmBytes.Load(), d.pcmSamples.Load(),
 		d.detectorFrames.Load(), d.streamingFrames.Load(), pcmAge, rms,
-		d.lastPeak.Load(), silence, d.spotterInitErrors.Load(),
+		d.lastPeak.Load(), silence, diagnosticSilenceFloor, d.spotterInitErrors.Load(),
 		d.spotterFeedErrors.Load(), d.wakeDetections.Load(),
 		d.captureStalls.Load(), d.captureReadErrors.Load(),
 		d.captureQueueDrops.Load(), d.outboundOpusPackets.Load(),
 		d.outboundOpusBytes.Load(), d.inboundRTPPackets.Load(),
 		d.inboundRTPBytes.Load(), d.decodedSamples.Load(),
-		d.playbackQueuedBlocks.Load(), d.playbackOutputFrames.Load(),
+		d.playbackQueuedBlocks.Load(), d.playbackQueueDrops.Load(),
+		d.playbackOutputFrames.Load(), d.setupDurationMs.Load(),
 		d.signalingAttempts.Load(), d.signalingHTTPStatus.Load(),
 		d.signalingDurationMs.Load(), d.signalingSuccess.Load(),
 	)
