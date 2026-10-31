@@ -19,6 +19,7 @@ func TestRuntimeDiagnosticsObservePCM(t *testing.T) {
 	if got := d.pcmSamples.Load(); got != 320 { t.Fatalf("samples = %d, want 320", got) }
 	if got := d.lastPeak.Load(); got != 1000 { t.Fatalf("peak = %d, want 1000", got) }
 	if got := d.lastVoiceUnixNano.Load(); got == 0 { t.Fatal("non-silent PCM did not update voice timestamp") }
+	if got := d.maxCapturePeak.Load(); got != 1000 { t.Fatalf("max capture peak = %d, want 1000", got) }
 	if !strings.Contains(d.snapshot(), "detector_frames=0") { t.Fatal("snapshot missing counters") }
 }
 
@@ -31,6 +32,17 @@ func TestRuntimeDiagnosticsSilenceAndInvalidPCM(t *testing.T) {
 	if got := d.firstPCMUnixNano.Load(); got == 0 { t.Fatal("first PCM timestamp missing") }
 	time.Sleep(time.Millisecond)
 	if !strings.Contains(d.snapshot(), "silence=") { t.Fatal("snapshot missing silence duration") }
+}
+
+func TestOutboundPCMLevelsAreMeasuredBeforeEncoding(t *testing.T) {
+	d := &runtimeDiagnostics{}
+	d.observeOutboundPCM([]int16{1000, -1000, 500, -500})
+	d.observeOutboundPCM(make([]int16, 4))
+	if got := d.outboundPCMFrames.Load(); got != 2 { t.Fatalf("outbound frames = %d, want 2", got) }
+	if got := d.outboundVoiceFrames.Load(); got != 1 { t.Fatalf("voice frames = %d, want 1", got) }
+	if got := d.maxOutboundPeak.Load(); got != 1000 { t.Fatalf("max outbound peak = %d, want 1000", got) }
+	if got := math.Float64frombits(d.maxOutboundRMSBits.Load()); got < 790 || got > 800 { t.Fatalf("max outbound RMS = %.1f, want about 790.6", got) }
+	if !strings.Contains(d.snapshot(), "opus_input_voice_frames=1") { t.Fatal("snapshot missing outbound PCM counters") }
 }
 
 func TestInboundPCMAndPlaybackDiagnostics(t *testing.T) {
